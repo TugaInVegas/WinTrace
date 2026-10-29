@@ -17,13 +17,24 @@ public class RecorderTests
     [Fact]
     public void Step_records_event_with_artifacts_and_redacts()
     {
-        var rec = new TraceRecorder(new FakeSource());
+        var rec = new TraceRecorder(new FakeSource(), new TraceOptions { Snapshots = SnapshotMode.Always });
         rec.Step("type", "#pwd", () => { }, new Dictionary<string, string> { ["password"] = "hunter2", ["text"] = "hi" });
         var e = Assert.Single(rec.Events);
         Assert.Equal("***", e.Params["password"]);
         Assert.Equal("hi", e.Params["text"]);
         Assert.NotNull(e.ScreenshotBefore);
         Assert.NotNull(e.Snapshot);
+    }
+
+    [Fact]
+    public void Snapshot_default_only_on_error()
+    {
+        var rec = new TraceRecorder(new FakeSource());
+        rec.Step("ok", null, () => { });
+        Assert.Throws<Exception>(() => rec.Step("bad", null, () => throw new Exception("x")));
+        Assert.Null(rec.Events[0].Snapshot);
+        Assert.NotNull(rec.Events[1].Snapshot);
+        Assert.True(rec.HasErrors);
     }
 
     [Fact]

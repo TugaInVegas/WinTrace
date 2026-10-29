@@ -38,6 +38,8 @@ namespace WinTrace
             };
         }
 
+        public bool HasErrors { get { lock (_gate) return _events.Any(e => e.Kind == "error"); } }
+
         public IReadOnlyList<TraceEvent> Events { get { lock (_gate) return _events.ToList(); } }
 
         /// <summary>Label subsequent actions until the returned scope is disposed.</summary>
@@ -78,7 +80,7 @@ namespace WinTrace
                 sw.Stop();
                 ev.DurationMs = sw.Elapsed.TotalMilliseconds;
                 ev.ScreenshotAfter = TryScreenshot(ev.Seq, "after");
-                ev.Snapshot = TrySnapshot(ev.Seq);
+                ev.Snapshot = TrySnapshot(ev.Seq, ev.Error != null);
                 lock (_gate) _events.Add(ev);
             }
         }
@@ -103,9 +105,10 @@ namespace WinTrace
             catch (Exception ex) { Log("screenshot failed: " + ex.Message); return null; }
         }
 
-        string? TrySnapshot(int seq)
+        string? TrySnapshot(int seq, bool failed)
         {
-            if (!_options.Snapshots || _source == null) return null;
+            var mode = _options.Snapshots;
+            if (_source == null || mode == SnapshotMode.Off || (mode == SnapshotMode.OnError && !failed)) return null;
             try
             {
                 var s = _source.CaptureSnapshot();
