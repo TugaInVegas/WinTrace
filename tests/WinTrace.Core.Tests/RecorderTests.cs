@@ -66,3 +66,39 @@ public class RecorderTests
         Assert.DoesNotContain("/*__TRACE_DATA__*/", html);
     }
 }
+
+public class VideoAndReaderTests
+{
+    [Fact]
+    public void Video_roundtrips_through_zip_and_html()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var vid = Path.Combine(dir, "screen.mp4");
+        File.WriteAllBytes(vid, new byte[] { 9, 9, 9 });
+
+        var rec = new TraceRecorder();
+        rec.AttachVideo(vid, DateTimeOffset.UtcNow);
+        rec.Step("click", "ok", () => { });
+        var zip = rec.Save(Path.Combine(dir, "t.zip"));
+
+        var loaded = TraceReader.Read(zip, Path.Combine(dir, "x"));
+        Assert.Single(loaded.Events);
+        Assert.Equal("video/screen.mp4", Assert.Single(loaded.Meta.Videos).File);
+        Assert.Equal(new byte[] { 9, 9, 9 }, File.ReadAllBytes(loaded.VideoFiles["video/screen.mp4"]));
+
+        var htmlPath = Path.Combine(dir, "out", "r.html");
+        TraceHtmlExporter.Write(htmlPath, loaded.Meta, loaded.Events, id => null, loaded.VideoFiles);
+        Assert.Contains("\"src\":\"r_files/screen.mp4\"", File.ReadAllText(htmlPath));
+        Assert.True(File.Exists(Path.Combine(dir, "out", "r_files", "screen.mp4")));
+    }
+
+    [Fact]
+    public void Ffmpeg_arguments_use_gdigrab()
+    {
+        var a = FfmpegScreenRecorder.BuildArguments("a b.mp4", 5);
+        Assert.Contains("-f gdigrab", a);
+        Assert.Contains("-framerate 5", a);
+        Assert.Contains("\"a b.mp4\"", a);
+    }
+}

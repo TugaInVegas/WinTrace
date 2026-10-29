@@ -11,6 +11,7 @@ tools (e.g. FlaUI) only need to implement `ITraceSource`.
 | Package | Purpose |
 |---|---|
 | `WinTrace.Core` | Recorder, trace.zip format, HTML viewer. |
+| `WinTrace.Cli` | `wintrace` dotnet tool: `show` (zip → HTML) and `summary` (console). |
 | `WinTrace.Appium` | `AppiumTraceSource`, traced click/type/find helpers, MSTest session helper. |
 
 ## Quick start (MSTest + WinAppDriver)
@@ -40,6 +41,35 @@ public void Login()
 
 Anything can be traced manually: `rec.Step("validate", "ribbon/Validate", () => ...)`.
 
+## Video
+
+Already have a recorder (e.g. ffmpeg)? Attach its file and its start time:
+
+```csharp
+rec.AttachVideo(@"Reports_Logs\screen.mp4", startedAt);   // startedAt = when the recording began
+```
+
+Or use the built-in one (needs `ffmpeg` on PATH):
+
+```csharp
+var video = FfmpegScreenRecorder.Start("Reports_Logs/screen.mp4");
+// ... test ...
+video.Stop();
+rec.AttachVideo(video.OutputPath, video.StartedAt);
+```
+
+The video goes into `trace.zip` (`video/`). In the HTML report, clicking a step or the timeline seeks the video to that moment.
+
+## Viewing
+
+```
+dotnet tool install -g WinTrace.Cli     # once published; for now: dotnet run --project src/WinTrace.Cli
+wintrace show Reports_Logs/Traces/Login_failed.zip
+wintrace summary Login_failed.zip       # exit code 1 if any step failed
+```
+
+Viewer keys: `↑/↓` or `j/k` navigate, `e` next error, `/` filter. The report opens on the first failing step.
+
 ## Design notes
 
 - **UIA snapshots are errors-only by default.** On WinAppDriver `PageSource` can take
@@ -49,6 +79,6 @@ Anything can be traced manually: `rec.Step("validate", "ribbon/Validate", () => 
 
 ## Roadmap
 
-FlaUI adapter, `wintrace show` CLI, interactive viewer with timeline, video sync (ffmpeg), Playwright trace side-by-side.
+FlaUI adapter, Playwright trace side-by-side, NuGet publishing.
 
 License: Apache-2.0
