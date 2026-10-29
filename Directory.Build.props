@@ -7,5 +7,11 @@
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/TugaInVegas/WinTrace</RepositoryUrl>
     <Version>0.1.0</Version>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>windows;ui-automation;trace;winappdriver;appium;flaui;testing</PackageTags>
+    <PackageProjectUrl>https://github.com/TugaInVegas/WinTrace</PackageProjectUrl>
   </PropertyGroup>
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>
