@@ -2,43 +2,109 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WinTrace Viewer</title>
 <style>
-:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d9d9de;--sel:#e8f0fe;--err:#c62828}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#98989d;--line:#38383a;--sel:#223049;--err:#ef5350}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;display:flex;height:100vh}
-#list{width:340px;border-right:1px solid var(--line);overflow:auto}
-#main{flex:1;overflow:auto;padding:16px}
-header{padding:12px;border-bottom:1px solid var(--line)}header h1{font-size:15px;margin:0}header small{color:var(--mut)}
-.ev{padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}.ev:hover{background:var(--sel)}.ev.on{background:var(--sel)}
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d9d9de;--sel:#e8f0fe;--err:#c62828;--ok:#2e7d32;--log:#8e8e93;--acc:#1a73e8}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#98989d;--line:#38383a;--sel:#223049;--err:#ef5350;--ok:#66bb6a;--acc:#8ab4f8}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;display:flex;flex-direction:column}
+header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+header h1{font-size:15px;margin:0}header small{color:var(--mut)}
+#tl{position:relative;height:34px;margin:8px 16px;border:1px solid var(--line);border-radius:4px;background:var(--sel);cursor:pointer}
+#tl .seg{position:absolute;top:4px;bottom:4px;min-width:3px;background:var(--ok);border-radius:2px;opacity:.85}
+#tl .seg.error{background:var(--err)}#tl .seg.log{background:var(--log);top:12px;bottom:12px}
+#tl .seg.on{outline:2px solid var(--acc);opacity:1}#tl #cursor{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none}
+#body{flex:1;display:flex;min-height:0}
+#side{width:360px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#filters{padding:8px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+#filters input[type=search]{flex:1;min-width:120px;padding:4px 6px}
+#list{overflow:auto;flex:1}
+.ev{padding:7px 12px;border-bottom:1px solid var(--line);cursor:pointer}.ev:hover,.ev.on{background:var(--sel)}
 .ev .n{font-weight:600}.ev .t{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ev.error .n{color:var(--err)}.grp{padding:6px 12px;font-size:12px;text-transform:uppercase;color:var(--mut);background:var(--sel)}
-.shots{display:flex;gap:12px;flex-wrap:wrap}.shots figure{margin:0;flex:1;min-width:280px}
-.shots img{max-width:100%;border:1px solid var(--line)}figcaption{color:var(--mut);margin-bottom:4px}
+.ev.error .n{color:var(--err)}.ev.log .n{font-weight:400;color:var(--mut)}
+.grp{padding:5px 12px;font-size:12px;text-transform:uppercase;color:var(--mut);background:var(--sel)}
+#main{flex:1;overflow:auto;padding:16px;min-width:0}
+.shots{display:flex;gap:12px;flex-wrap:wrap}.shots figure{margin:0;flex:1;min-width:260px}
+.shots img{max-width:100%;border:1px solid var(--line);cursor:zoom-in}figcaption{color:var(--mut);margin-bottom:4px}
+video{max-width:100%;max-height:280px;background:#000;margin-bottom:12px}
 pre{background:var(--sel);padding:10px;overflow:auto;max-height:360px;border-radius:6px}
 .err{color:var(--err);font-weight:600}table{border-collapse:collapse}td{padding:2px 12px 2px 0;vertical-align:top}
-@media(max-width:700px){body{flex-direction:column;height:auto}#list{width:auto;max-height:40vh}}
+.k{color:var(--mut);font-size:12px}
+@media(max-width:760px){#body{flex-direction:column}#side{width:auto;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<div id="list"></div><div id="main"><p>Select a step.</p></div>
+<header id="hd"></header>
+<div id="tl"><div id="cursor"></div></div>
+<div id="body">
+ <div id="side"><div id="filters">
+  <input type="search" id="q" placeholder="Filter steps (/ to focus)">
+  <label><input type="checkbox" id="onlyErr"> errors</label>
+  <label><input type="checkbox" id="hideLog"> hide logs</label>
+ </div><div id="list"></div></div>
+ <div id="main"><p>Select a step. Use <b>↑/↓</b> or <b>j/k</b> to navigate.</p></div>
+</div>
 <script>
 const D=/*__TRACE_DATA__*/null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const list=$('#list');
-list.innerHTML=`<header><h1>${esc(D.meta.title)}</h1><small>${esc(D.meta.framework)} · ${esc(D.meta.started)} · ${D.events.length} events</small></header>`;
+const t0=Date.parse(D.meta.started);
+const off=e=>Date.parse(e.start)-t0;
+const total=Math.max(1,...D.events.map(e=>off(e)+(e.durationMs||0)));
+const errs=D.events.filter(e=>e.kind==='error').length;
+$('#hd').innerHTML=`<h1>${esc(D.meta.title)}</h1><small>${esc(D.meta.framework)} · ${esc(D.meta.started)} · ${esc(D.meta.machine)}</small>
+ <small>${D.events.length} events · ${(total/1000).toFixed(1)} s · ${errs?`<b class="err">${errs} error(s)</b>`:'no errors'}</small>`;
+const video=(D.meta.videos||[]).find(v=>v.src);
+let cur=-1;const items=[];
+const list=$('#list'),tl=$('#tl');
 let lastG=null;
 D.events.forEach((e,i)=>{
-  if(e.group!==lastG){lastG=e.group;if(e.group)list.insertAdjacentHTML('beforeend',`<div class="grp">${esc(e.group)}</div>`)}
+  if(e.group!==lastG){lastG=e.group;if(e.group){const g=document.createElement('div');g.className='grp';g.textContent=e.group;g.dataset.g=1;list.appendChild(g)}}
   const d=document.createElement('div');d.className='ev '+e.kind;
-  d.innerHTML=`<div class="n">${esc(e.name)} <small>${e.durationMs?Math.round(e.durationMs)+' ms':''}</small></div><div class="t">${esc(e.target||'')}</div>`;
-  d.onclick=()=>{document.querySelectorAll('.ev.on').forEach(x=>x.classList.remove('on'));d.classList.add('on');show(e)};
-  list.appendChild(d);
+  d.innerHTML=`<div class="n">${esc(e.name)} <span class="k">${e.durationMs?Math.round(e.durationMs)+' ms':''}</span></div><div class="t">${esc(e.target||'')}</div>`;
+  d.onclick=()=>select(i,true);list.appendChild(d);
+  const s=document.createElement('div');s.className='seg '+e.kind;
+  s.style.left=(off(e)/total*100)+'%';s.style.width=Math.max(0.3,(e.durationMs||0)/total*100)+'%';
+  s.title=e.name+(e.target?' · '+e.target:'');
+  s.onclick=ev=>{ev.stopPropagation();select(i,true)};tl.appendChild(s);
+  items.push({e,d,s});
 });
-function show(e){
-  const R=D.resources,fig=(l,k)=>e[k]&&R[e[k]]?`<figure><figcaption>${l}</figcaption><img src="${R[e[k]]}"></figure>`:'';
-  const p=Object.entries(e.params||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
-  $('#main').innerHTML=`<h2>${esc(e.name)}</h2>${e.target?`<p>Target: <code>${esc(e.target)}</code></p>`:''}
-  ${e.error?`<p class="err">${esc(e.error)}</p>`:''}<table>${p}</table>
-  <div class="shots">${fig('Before','screenshotBefore')}${fig('After','screenshotAfter')}</div>
-  ${e.snapshot&&R[e.snapshot]?`<h3>UI snapshot</h3><pre>${esc(R[e.snapshot])}</pre>`:''}`;
+tl.onclick=ev=>{const r=tl.getBoundingClientRect();const ms=(ev.clientX-r.left)/r.width*total;
+  const v=$('#vid');if(v&&video)v.currentTime=Math.max(0,(t0+ms-Date.parse(video.started))/1000)};
+function select(i,seek){
+  if(cur>=0){items[cur].d.classList.remove('on');items[cur].s.classList.remove('on')}
+  cur=i;const {e,d,s}=items[i];d.classList.add('on');s.classList.add('on');d.scrollIntoView({block:'nearest'});
+  const R=D.resources,fig=(l,k)=>e[k]&&R[e[k]]?`<figure><figcaption>${l}</figcaption><img src="${R[e[k]]}" onclick="window.open(this.src)"></figure>`:'';
+  const p=Object.entries(e.params||{}).map(([k,v])=>`<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+  const prev=$('#vid'),keep=prev&&video;
+  $('#main').innerHTML=`${video?`<video id="vid" src="${esc(video.src)}" controls></video>`:''}
+   <h2>#${e.seq} ${esc(e.name)}</h2>${e.target?`<p>Target: <code>${esc(e.target)}</code></p>`:''}
+   <p class="k">+${(off(e)/1000).toFixed(2)} s · ${Math.round(e.durationMs||0)} ms</p>
+   ${e.error?`<p class="err">${esc(e.error)}</p>`:''}<table>${p}</table>
+   <div class="shots">${fig('Before','screenshotBefore')}${fig('After','screenshotAfter')}</div>
+   ${e.snapshot&&R[e.snapshot]?`<h3>UI snapshot</h3><pre>${esc(R[e.snapshot])}</pre>`:''}`;
+  const v=$('#vid');
+  if(v){v.currentTime=Math.max(0,(Date.parse(e.start)-Date.parse(video.started))/1000);v.ontimeupdate=()=>cursor(v)}
+  $('#cursor').style.left=(off(e)/total*100)+'%';
 }
-if(D.events.length)list.querySelector('.ev').click();
+function cursor(v){const ms=Date.parse(video.started)+v.currentTime*1000-t0;$('#cursor').style.left=Math.min(100,Math.max(0,ms/total*100))+'%'}
+function visible(){return items.map((x,i)=>x.d.style.display!=='none'?i:-1).filter(i=>i>=0)}
+function applyFilter(){
+  const q=$('#q').value.toLowerCase(),oe=$('#onlyErr').checked,hl=$('#hideLog').checked;
+  items.forEach(({e,d,s})=>{
+    const ok=(!q||(e.name+' '+(e.target||'')+' '+(e.error||'')+' '+Object.values(e.params||{}).join(' ')).toLowerCase().includes(q))
+      &&(!oe||e.kind==='error')&&!(hl&&e.kind==='log');
+    d.style.display=ok?'':'none';s.style.opacity=ok?'':'.15';
+  });
+  list.querySelectorAll('.grp').forEach(g=>{let n=g.nextElementSibling,any=false;
+    while(n&&!n.dataset.g){if(n.style.display!=='none')any=true;n=n.nextElementSibling}g.style.display=any?'':'none'});
+}
+['q','onlyErr','hideLog'].forEach(id=>$('#'+id).addEventListener('input',applyFilter));
+document.addEventListener('keydown',ev=>{
+  if(ev.target.tagName==='INPUT'&&ev.key!=='Escape')return;
+  const v=visible();const pos=v.indexOf(cur);
+  if(ev.key==='ArrowDown'||ev.key==='j'){ev.preventDefault();if(v.length)select(v[Math.min(v.length-1,pos+1)],true)}
+  else if(ev.key==='ArrowUp'||ev.key==='k'){ev.preventDefault();if(v.length)select(v[Math.max(0,pos-1)],true)}
+  else if(ev.key==='/'){ev.preventDefault();$('#q').focus()}
+  else if(ev.key==='e'){const n=v.find(i=>i>cur&&items[i].e.kind==='error');if(n!==undefined)select(n,true)}
+  else if(ev.key==='Escape')document.activeElement.blur();
+});
+const first=items.findIndex(x=>x.e.kind==='error');
+if(items.length)select(first>=0?first:0,true);
 </script></body></html>
