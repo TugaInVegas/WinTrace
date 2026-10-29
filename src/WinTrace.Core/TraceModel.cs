@@ -31,12 +31,15 @@ namespace WinTrace
         public string Os { get; set; } = Environment.OSVersion.ToString();
     }
 
+    public enum SnapshotMode { Off, OnError, Always }
+
     public sealed class TraceOptions
     {
         public string Title { get; set; } = "WinTrace";
         public string Framework { get; set; } = "";
         public bool Screenshots { get; set; } = true;
-        public bool Snapshots { get; set; } = true;
+        /// <summary>UI-tree snapshots can be very slow on WinAppDriver (tens of seconds); default is errors only.</summary>
+        public SnapshotMode Snapshots { get; set; } = SnapshotMode.OnError;
         /// <summary>Param names (case-insensitive substrings) whose values are replaced with ***.</summary>
         public ISet<string> RedactParams { get; set; } =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "password", "secret", "token" };
