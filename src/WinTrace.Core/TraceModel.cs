@@ -20,6 +20,16 @@ namespace WinTrace
         public string? Snapshot { get; set; }
     }
 
+    public sealed class TraceVideo
+    {
+        /// <summary>Path inside trace.zip, e.g. video/screen.mp4.</summary>
+        public string File { get; set; } = "";
+        /// <summary>Wall-clock instant the recording started; used to sync steps with video time.</summary>
+        public DateTimeOffset Started { get; set; }
+        /// <summary>Relative URL used by the HTML report (set on export).</summary>
+        public string? Src { get; set; }
+    }
+
     public sealed class TraceMetadata
     {
         public int FormatVersion { get; set; } = 1;
@@ -27,6 +37,7 @@ namespace WinTrace
         public string Framework { get; set; } = "";
         public DateTimeOffset Started { get; set; }
         public DateTimeOffset? Stopped { get; set; }
+        public List<TraceVideo> Videos { get; set; } = new List<TraceVideo>();
         public string Machine { get; set; } = Environment.MachineName;
         public string Os { get; set; } = Environment.OSVersion.ToString();
     }

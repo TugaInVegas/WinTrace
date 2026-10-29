@@ -23,6 +23,7 @@ namespace WinTrace
         readonly List<TraceEvent> _events = new List<TraceEvent>();
         readonly Dictionary<string, byte[]> _resources = new Dictionary<string, byte[]>();
         readonly TraceMetadata _meta;
+        readonly Dictionary<string, string> _videoFiles = new Dictionary<string, string>();
         string? _group;
         int _seq;
 
@@ -41,6 +42,20 @@ namespace WinTrace
         public bool HasErrors { get { lock (_gate) return _events.Any(e => e.Kind == "error"); } }
 
         public IReadOnlyList<TraceEvent> Events { get { lock (_gate) return _events.ToList(); } }
+
+        /// <summary>
+        /// Attach a screen recording (e.g. from your own ffmpeg ScreenRecorder). <paramref name="startedAt"/>
+        /// must be the instant the recording began so the viewer can seek to each step.
+        /// </summary>
+        public void AttachVideo(string path, DateTimeOffset startedAt)
+        {
+            var name = "video/" + Path.GetFileName(path);
+            lock (_gate)
+            {
+                _meta.Videos.Add(new TraceVideo { File = name, Started = startedAt });
+                _videoFiles[name] = path;
+            }
+        }
 
         /// <summary>Label subsequent actions until the returned scope is disposed.</summary>
         public IDisposable Group(string name)
@@ -140,6 +155,13 @@ namespace WinTrace
                         var entry = zip.CreateEntry(kv.Key, CompressionLevel.Fastest);
                         using (var s = entry.Open()) s.Write(kv.Value, 0, kv.Value.Length);
                     }
+                    foreach (var kv in _videoFiles.Where(v => File.Exists(v.Value)))
+                    {
+                        var entry = zip.CreateEntry(kv.Key, CompressionLevel.NoCompression);
+                        using (var s = entry.Open())
+                        using (var f = new FileStream(kv.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                            f.CopyTo(s);
+                    }
                 }
             }
             return path;
@@ -149,7 +171,7 @@ namespace WinTrace
         public string SaveHtml(string path)
         {
             _meta.Stopped = DateTimeOffset.UtcNow;
-            return TraceHtmlExporter.Write(path, _meta, Events, id => { lock (_gate) return _resources.TryGetValue(id, out var b) ? b : null; });
+            return TraceHtmlExporter.Write(path, _meta, Events, id => { lock (_gate) return _resources.TryGetValue(id, out var b) ? b : null; }, new Dictionary<string, string>(_videoFiles));
         }
 
         static void Write(ZipArchive zip, string name, string text)

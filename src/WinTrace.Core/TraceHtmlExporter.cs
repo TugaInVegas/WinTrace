@@ -10,7 +10,7 @@ namespace WinTrace
 {
     public static class TraceHtmlExporter
     {
-        public static string Write(string path, TraceMetadata meta, IEnumerable<TraceEvent> events, Func<string, byte[]?> resource)
+        public static string Write(string path, TraceMetadata meta, IEnumerable<TraceEvent> events, Func<string, byte[]?> resource, IDictionary<string, string>? videoFiles = null)
         {
             var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
             var evs = events.OrderBy(e => e.Seq).ToList();
@@ -25,6 +25,17 @@ namespace WinTrace
                         ? "data:image/png;base64," + Convert.ToBase64String(bytes)
                         : Encoding.UTF8.GetString(bytes);
                 }
+            var stem = Path.GetFileNameWithoutExtension(path);
+            var filesDir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".", stem + "_files");
+            foreach (var v in meta.Videos)
+            {
+                if (videoFiles == null || !videoFiles.TryGetValue(v.File, out var src) || !File.Exists(src)) continue;
+                Directory.CreateDirectory(filesDir);
+                var dest = Path.Combine(filesDir, Path.GetFileName(v.File));
+                if (!string.Equals(Path.GetFullPath(src), Path.GetFullPath(dest), StringComparison.OrdinalIgnoreCase))
+                    File.Copy(src, dest, true);
+                v.Src = Uri.EscapeUriString(stem + "_files/" + Path.GetFileName(v.File));
+            }
             var data = JsonSerializer.Serialize(new { meta, events = evs, resources = res }, opts)
                 .Replace("</", "<\\/");
 
