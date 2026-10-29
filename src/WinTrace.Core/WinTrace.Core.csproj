@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <PackageId>WinTrace.Core</PackageId>
+    <Description>Playwright-style trace recorder and viewer for Windows desktop UI automation.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <EmbeddedResource Include="Viewer\viewer.html" LogicalName="viewer.html" />
+  </ItemGroup>
+</Project>

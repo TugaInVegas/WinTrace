@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WinTrace Viewer</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d9d9de;--sel:#e8f0fe;--err:#c62828}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#98989d;--line:#38383a;--sel:#223049;--err:#ef5350}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;display:flex;height:100vh}
+#list{width:340px;border-right:1px solid var(--line);overflow:auto}
+#main{flex:1;overflow:auto;padding:16px}
+header{padding:12px;border-bottom:1px solid var(--line)}header h1{font-size:15px;margin:0}header small{color:var(--mut)}
+.ev{padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}.ev:hover{background:var(--sel)}.ev.on{background:var(--sel)}
+.ev .n{font-weight:600}.ev .t{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev.error .n{color:var(--err)}.grp{padding:6px 12px;font-size:12px;text-transform:uppercase;color:var(--mut);background:var(--sel)}
+.shots{display:flex;gap:12px;flex-wrap:wrap}.shots figure{margin:0;flex:1;min-width:280px}
+.shots img{max-width:100%;border:1px solid var(--line)}figcaption{color:var(--mut);margin-bottom:4px}
+pre{background:var(--sel);padding:10px;overflow:auto;max-height:360px;border-radius:6px}
+.err{color:var(--err);font-weight:600}table{border-collapse:collapse}td{padding:2px 12px 2px 0;vertical-align:top}
+@media(max-width:700px){body{flex-direction:column;height:auto}#list{width:auto;max-height:40vh}}
+</style></head><body>
+<div id="list"></div><div id="main"><p>Select a step.</p></div>
+<script>
+const D=/*__TRACE_DATA__*/null;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const list=$('#list');
+list.innerHTML=`<header><h1>${esc(D.meta.title)}</h1><small>${esc(D.meta.framework)} · ${esc(D.meta.started)} · ${D.events.length} events</small></header>`;
+let lastG=null;
+D.events.forEach((e,i)=>{
+  if(e.group!==lastG){lastG=e.group;if(e.group)list.insertAdjacentHTML('beforeend',`<div class="grp">${esc(e.group)}</div>`)}
+  const d=document.createElement('div');d.className='ev '+e.kind;
+  d.innerHTML=`<div class="n">${esc(e.name)} <small>${e.durationMs?Math.round(e.durationMs)+' ms':''}</small></div><div class="t">${esc(e.target||'')}</div>`;
+  d.onclick=()=>{document.querySelectorAll('.ev.on').forEach(x=>x.classList.remove('on'));d.classList.add('on');show(e)};
+  list.appendChild(d);
+});
+function show(e){
+  const R=D.resources,fig=(l,k)=>e[k]&&R[e[k]]?`<figure><figcaption>${l}</figcaption><img src="${R[e[k]]}"></figure>`:'';
+  const p=Object.entries(e.params||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+  $('#main').innerHTML=`<h2>${esc(e.name)}</h2>${e.target?`<p>Target: <code>${esc(e.target)}</code></p>`:''}
+  ${e.error?`<p class="err">${esc(e.error)}</p>`:''}<table>${p}</table>
+  <div class="shots">${fig('Before','screenshotBefore')}${fig('After','screenshotAfter')}</div>
+  ${e.snapshot&&R[e.snapshot]?`<h3>UI snapshot</h3><pre>${esc(R[e.snapshot])}</pre>`:''}`;
+}
+if(D.events.length)list.querySelector('.ev').click();
+</script></body></html>
