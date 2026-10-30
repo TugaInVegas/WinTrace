@@ -18,4 +18,7 @@ Keep `WinTrace.Appium` driver-agnostic (`IWebDriver` only) and keep UIA snapshot
   cannot be deleted, so bump the version for every release.
 
 ## Workflow
+- Commit as the repo owner only: run `git config user.name "TugaInVegas"` and
+  `git config user.email "tugainvegas@gmail.com"` before the first commit. No Co-Authored-By,
+  Claude-Session or "Generated with Claude Code" lines in commits or PR descriptions.
 - Work on a `claude/*` branch, open a PR, wait for CI (windows-latest) to pass, then merge.
