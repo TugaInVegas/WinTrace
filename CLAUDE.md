@@ -1,0 +1,21 @@
+# WinTrace — notes for Claude sessions
+
+Playwright-style traces for Windows desktop UI automation. Primary consumer: an MSTest (.NET 8)
+suite driving a WPF app with Appium.WebDriver 4.4.5 + WinAppDriver, moving to NovaWindowsDriver.
+Keep `WinTrace.Appium` driver-agnostic (`IWebDriver` only) and keep UIA snapshots opt-in/on-error
+(WinAppDriver `PageSource` can take 20-27 s).
+
+## Build and test
+- `dotnet test` (Core is netstandard2.0 and builds/tests on Linux; .NET 8 SDK via apt `dotnet-sdk-8.0`).
+- `dotnet pack -c Release -o artifacts` must stay warning-free.
+
+## Releasing
+- Run the **Publish** workflow manually (GitHub MCP `actions_run_trigger`, `run_workflow`,
+  workflow `publish.yml`, ref `main`, input `version`, e.g. `0.1.1`). It tests, packs, publishes to
+  nuget.org via Trusted Publishing (OIDC, repo variable `NUGET_USER`) and creates the `vX.Y.Z`
+  tag + GitHub release with the .nupkg files.
+- Do not push tags from the session: tag pushes are refused there. A published NuGet version
+  cannot be deleted, so bump the version for every release.
+
+## Workflow
+- Work on a `claude/*` branch, open a PR, wait for CI (windows-latest) to pass, then merge.
