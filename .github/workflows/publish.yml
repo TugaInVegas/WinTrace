@@ -2,7 +2,8 @@ name: Publish
 # Create a tag like v0.1.0 to publish to nuget.org via Trusted Publishing (OIDC, no stored API key).
 # Setup: a Trusted Publishing policy on nuget.org for this repo + workflow file (publish.yml),
 # and a repository variable NUGET_USER with your nuget.org username.
-# Can also be run by hand from the Actions tab (Run workflow) with an explicit version.
+# Can also be run by hand from the Actions tab (Run workflow) with an explicit version; that run
+# also creates the vX.Y.Z tag and GitHub release (with the .nupkg files attached).
 on:
   push:
     tags: ['v*']
@@ -13,7 +14,7 @@ on:
         required: true
 permissions:
   id-token: write
-  contents: read
+  contents: write # create the tag/release on manual runs
 jobs:
   publish:
     runs-on: windows-latest
@@ -28,6 +29,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
           dotnet pack -c Release -o artifacts -p:Version="$version"
       - name: NuGet login (OIDC)
         id: login
@@ -43,3 +45,14 @@ jobs:
           for pkg in artifacts/*.nupkg; do
             dotnet nuget push "$pkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
           done
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" artifacts/*.nupkg --clobber
+          else
+            gh release create "$tag" artifacts/*.nupkg --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          fi
