@@ -1,8 +1,13 @@
 name: Publish
-# Create a tag like v0.1.0 to publish. Requires the NUGET_API_KEY repository secret.
+# Create a tag like v0.1.0 to publish to nuget.org via Trusted Publishing (OIDC, no stored API key).
+# Setup: a Trusted Publishing policy on nuget.org for this repo + workflow file (publish.yml),
+# and a repository variable NUGET_USER with your nuget.org username.
 on:
   push:
     tags: ['v*']
+permissions:
+  id-token: write
+  contents: read
 jobs:
   publish:
     runs-on: windows-latest
@@ -14,6 +19,11 @@ jobs:
       - name: Pack with tag version
         shell: bash
         run: dotnet pack -c Release -o artifacts -p:Version="${GITHUB_REF_NAME#v}"
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
       - name: Push to NuGet
         shell: bash
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
