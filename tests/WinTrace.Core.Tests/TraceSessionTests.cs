@@ -12,7 +12,7 @@ public class TraceSessionTests
     public void Passed_test_writes_nothing_by_default()
     {
         var dir = TempDir();
-        var s = new TraceSession("Login01_QA_AMERICA", null, dir);
+        var s = new TraceSession("Login_ShowsDashboard", null, dir);
         s.Recorder.Step("click", "ok", () => { });
         Assert.Empty(s.Finish(testFailed: false));
         Assert.False(Directory.Exists(dir));
@@ -23,13 +23,13 @@ public class TraceSessionTests
     {
         var dir = TempDir();
         var attached = new List<string>();
-        var s = new TraceSession("Login01_QA_AMERICA", null, dir);
+        var s = new TraceSession("Login_ShowsDashboard", null, dir);
         s.Recorder.Step("click", "ok", () => { });
         var files = s.Finish(testFailed: true, attached.Add);
         Assert.Equal(2, files.Count);
         Assert.Equal(files, attached);
         Assert.All(files, f => Assert.True(File.Exists(f)));
-        Assert.Contains("Login01_QA_AMERICA_", Path.GetFileName(files[0]));
+        Assert.Contains("Login_ShowsDashboard_", Path.GetFileName(files[0]));
         Assert.EndsWith("_failed.zip", files[0]);
     }
 

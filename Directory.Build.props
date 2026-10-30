@@ -7,7 +7,7 @@
     <Copyright>Copyright (c) TugaInVegas</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/TugaInVegas/WinTrace</RepositoryUrl>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <!-- Debugging into the packages: symbols (.snupkg) + Source Link back to this repo. -->
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

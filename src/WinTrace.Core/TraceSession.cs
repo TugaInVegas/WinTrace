@@ -21,7 +21,7 @@ namespace WinTrace
         FfmpegScreenRecorder? _video;
         string? _videoPath;
 
-        public TraceSession(string testName, ITraceSource? source, string outputDir = "Reports_Logs/Traces", TraceOptions? options = null)
+        public TraceSession(string testName, ITraceSource? source, string outputDir = "TestResults/WinTrace", TraceOptions? options = null)
         {
             _name = SafeName(testName);
             OutputDir = outputDir;
