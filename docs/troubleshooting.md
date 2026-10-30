@@ -50,6 +50,14 @@ The viewer places steps on the video using its start time. With `TraceSession.St
 ffmpeg starts capturing. With `AttachVideo`, pass the exact instant your recorder started; a few hundred
 milliseconds of error shifts every step by the same amount.
 
+## `wintrace snapshot` fails
+
+- "Could not reach the driver": start WinAppDriver (or the Appium server) and check `--url`
+  (WinAppDriver's default is `http://127.0.0.1:4723`; some setups use a `/wd/hub` path).
+- "did not return a session id" with Appium 2: pass `--automation-name` (for example `NovaWindows`).
+- "No top-level window": use the title shown in the window's title bar (exact, or a part of it), or `--root`.
+- `--root` can be slow on WinAppDriver with many windows open: prefer `--window`.
+
 ## `ffmpeg` was not found
 
 `StartVideo` runs `ffmpeg` from `PATH`. Install it or pass the full path:

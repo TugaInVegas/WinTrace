@@ -1,9 +1,14 @@
 # Integration guide for AI agents
 
-This page is written for AI coding agents (and for people who like checklists). It covers two jobs:
+This page is written for AI coding agents (and for people who like checklists). It covers:
 
 1. [Adding WinTrace to a test project](#adding-wintrace-to-a-test-project) when a user asks for it.
 2. [Debugging a failed test from its trace](#debugging-a-failed-test-from-its-trace) without a browser.
+3. [Writing new tests with real locators](#writing-new-tests-with-real-locators) from the running application.
+
+Ready-made Claude Code skills for 2 and 3 are in
+[integrations/claude-code](https://github.com/TugaInVegas/WinTrace/tree/main/integrations); copy them into the
+project's `.claude/skills/`.
 
 ## Adding WinTrace to a test project
 
@@ -116,10 +121,18 @@ run them, say so and leave verification steps for the user.
 
 ## Debugging a failed test from its trace
 
-Install the CLI once: `dotnet tool install -g WinTrace.Cli`.
+Every failed test leaves, next to its `*_failed.zip`:
+
+- `*_failed.md`: outcome, failing step, error, UI elements similar to the locator that failed (with suggested
+  locators), stack trace, every step and the UI tree at the failure. **Read this first**; no tool needed.
+- `*_failed.png` (or `.jpg`): the screenshot at the failure, for agents that can read images.
+
+For more, install the CLI once: `dotnet tool install -g WinTrace.Cli`. Every command takes a trace file **or a
+folder** (it then uses the newest failed trace under it).
 
 ```
-wintrace summary <trace.zip>               # every step, FAIL marks, exit code 1 if any failed
+wintrace list TestResults --failed         # failed traces after a run, newest first, with the failing step
+wintrace summary <trace.zip|folder>        # every step, FAIL marks, exit code 1 if the test failed
 wintrace inspect <trace.zip>               # the step where the test failed, in detail
 wintrace inspect <trace.zip> --tree        # ... plus the UI tree as indented text
 wintrace inspect <trace.zip> --extract out # ... and save its screenshots (add --all for every step)
@@ -143,15 +156,36 @@ How to read the result:
 
 Prefer `MobileBy.AccessibilityId` locators over XPath: XPath is slow on WinAppDriver.
 
+## Writing new tests with real locators
+
+Do not guess locators. With the application running under WinAppDriver (or an Appium server with
+NovaWindowsDriver), read them from the live UI:
+
+```
+wintrace snapshot --window "<window title>"                  # UI tree with a suggested locator per element
+wintrace snapshot --window "<window title>" --find "Save"    # elements matching or resembling "Save"
+wintrace snapshot --window "<window title>" --out tree.xml --screenshot window.png --json
+wintrace snapshot --session <id>                             # the session of a test paused at a breakpoint
+wintrace snapshot --url http://127.0.0.1:4723 --automation-name NovaWindows --window "<title>"   # Appium 2
+```
+
+`--window` matches the exact title first, then a title containing the text. Sessions created by `snapshot` are
+deleted when it finishes; `--session` only reads.
+
+Then write the test with the project's existing base class, page objects and helpers, record each user action as
+a step (`Step(...)` or the `...Traced()` extensions), run it, and debug failures from its trace as above.
+
 ## Snippet for a project's agent instructions
 
 To make future agents use WinTrace in a project that already has it, add this to the project's
 `AGENTS.md` or `CLAUDE.md`:
 
 ```markdown
-## UI test traces (WinTrace)
-- Failed UI tests write traces to `TestResults/WinTrace/*_failed.zip`.
-- To debug a failure, run `wintrace inspect <zip>` (add `--tree`, `--extract <dir>` or `--json`) before
-  changing code. Use its suggested locators for "element not found" errors.
-- Record new user actions with `Trace.Recorder.Step(...)` or the project's traced helpers.
+## Desktop UI tests (WinTrace)
+- Failed UI tests write `TestResults/WinTrace/*_failed.zip` plus a `.md` report and the failure screenshot.
+  Read the `.md` and the screenshot before changing code; `wintrace list TestResults --failed` lists them and
+  `wintrace inspect TestResults` (`--tree`, `--extract <dir> --all`, `--json`) shows the newest failure.
+- Use the suggested locators for "element not found" errors.
+- New locators come from the running app: `wintrace snapshot --window "<title>" [--find <text>]`. Never guess.
+- Record new user actions as steps (`Step(...)`, `ClickTraced()`, `FindElementTraced(by)`).
 ```

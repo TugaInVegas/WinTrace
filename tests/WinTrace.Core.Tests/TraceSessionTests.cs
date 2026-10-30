@@ -27,7 +27,7 @@ public class TraceSessionTests
         var s = new TraceSession("Login_ShowsDashboard", null, dir);
         s.Recorder.Step("click", "ok", () => { });
         var files = s.Finish(testFailed: true, attached.Add);
-        Assert.Equal(2, files.Count);
+        Assert.Equal(3, files.Count);   // zip, html, md (no screenshots without a source)
         Assert.Equal(files, attached);
         Assert.All(files, f => Assert.True(File.Exists(f)));
         Assert.Contains("Login_ShowsDashboard_", Path.GetFileName(files[0]));
@@ -43,7 +43,7 @@ public class TraceSessionTests
 
         var s2 = new TraceSession("t", null, TempDir()) { WriteHtml = false, SaveRecoveredErrors = true };
         try { s2.Recorder.Step("x", null, () => throw new Exception("recovered by the test")); } catch { }
-        Assert.Single(s2.Finish(testFailed: false));
+        Assert.Equal(2, s2.Finish(testFailed: false).Count);   // zip + md
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class TraceSessionTests
         var s = new TraceSession("embedded", null, dir);
         s.Recorder.AttachVideo(video, DateTimeOffset.UtcNow);
         var files = s.Finish(true);
-        Assert.Equal(2, files.Count);
+        Assert.Equal(3, files.Count);
         var html = File.ReadAllText(files[1]);
         Assert.Contains("\"embedded\":\"video/rec.mp4\"", html);
         Assert.Contains("\"video/rec.mp4\":\"AAAAGGZ0eXA=\"", html);
@@ -86,7 +86,7 @@ public class TraceSessionTests
         var s2 = new TraceSession("side", null, dir) { EmbedVideoInHtml = false };
         s2.Recorder.AttachVideo(video, DateTimeOffset.UtcNow);
         var files2 = s2.Finish(true);
-        Assert.Equal(3, files2.Count);
+        Assert.Equal(4, files2.Count);
         Assert.EndsWith(Path.Combine("_files", "rec.mp4").Replace("_files", "_failed_files"), files2[2]);
     }
 
@@ -94,7 +94,7 @@ public class TraceSessionTests
     public void Unsafe_test_names_become_valid_file_names()
     {
         var s = new TraceSession("a/b:c*d?", null, TempDir()) { WriteHtml = false };
-        var f = Assert.Single(s.Finish(testFailed: true));
-        Assert.True(File.Exists(f));
+        var files = s.Finish(testFailed: true);
+        Assert.All(files, f => Assert.True(File.Exists(f)));
     }
 }

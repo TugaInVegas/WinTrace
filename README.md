@@ -72,10 +72,16 @@ WinTrace is built to be added and used by coding agents (Claude Code, Copilot, C
 
 > Add WinTrace to this test project. Follow https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/ai-agents.md
 
-Agents can also read traces without a browser: `wintrace inspect <trace.zip>` prints the failed step, the
-stack trace and UI elements similar to a locator that was not found; `--json`, `--tree` and
-`--extract <dir>` give structured output, the UI tree and the screenshots. The repository has an
-[`llms.txt`](https://github.com/TugaInVegas/WinTrace/blob/main/llms.txt), which is also included in each package.
+What agents get:
+
+- **A Markdown report and the failure screenshot** next to every failed trace: read them, no tool needed.
+- **`wintrace list TestResults --failed`** and **`wintrace inspect TestResults`**: failed tests after a run and the
+  newest failure in detail (similar elements with suggested locators, stack trace, `--tree`, `--extract`, `--json`).
+- **`wintrace snapshot --window "<title>" --find <text>`**: the live UI tree of the running app with a locator per
+  element, to write new tests with real locators instead of guesses.
+- **Claude Code skills** ([integrations](https://github.com/TugaInVegas/WinTrace/tree/main/integrations)) for
+  debugging a failed UI test and writing a new one, and an
+  [`llms.txt`](https://github.com/TugaInVegas/WinTrace/blob/main/llms.txt) (also inside each package).
 
 ## Documentation
 
@@ -96,7 +102,7 @@ stack trace and UI elements similar to a locator that was not found; `--json`, `
 |---|---|
 | [`WinTrace.Core`](https://www.nuget.org/packages/WinTrace.Core) | Recorder, `TraceSession`, trace format, HTML viewer, ffmpeg recorder. netstandard2.0, no UI-automation dependency. |
 | [`WinTrace.Appium`](https://www.nuget.org/packages/WinTrace.Appium) | `AppiumTraceSource` and traced `Find`, `FindAll`, `Click`, `SendKeys`, `Clear`. |
-| [`WinTrace.Cli`](https://www.nuget.org/packages/WinTrace.Cli) | `wintrace show` (zip → HTML), `summary` and `inspect` (console or `--json`, for CI and AI agents). |
+| [`WinTrace.Cli`](https://www.nuget.org/packages/WinTrace.Cli) | `wintrace list`, `summary`, `inspect`, `show` for traces, and `snapshot` for the live UI tree (console or `--json`, for CI and AI agents). |
 
 ## Contributing
 

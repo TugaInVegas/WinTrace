@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace WinTrace
 {
@@ -43,6 +44,11 @@ namespace WinTrace
         /// </summary>
         public bool EmbedVideoInHtml { get; set; } = true;
         /// <summary>
+        /// Also write a Markdown summary (<c>.md</c>) and the screenshot taken at the failure next to the zip (default
+        /// true). Text and images are what people skimming CI output and AI agents read most easily.
+        /// </summary>
+        public bool WriteMarkdown { get; set; } = true;
+        /// <summary>
         /// Also save the trace of a passed test when one of its steps threw and the test recovered (default false).
         /// </summary>
         public bool SaveRecoveredErrors { get; set; }
@@ -81,13 +87,38 @@ namespace WinTrace
             if (!SaveOnlyOnFailure || failed || (SaveRecoveredErrors && Recorder.HasErrors))
             {
                 var stem = Path.Combine(OutputDir, $"{_name}_{DateTime.Now:yyyyMMdd_HHmmss}{(failed ? "_failed" : "")}");
-                written.Add(Recorder.Save(stem + ".zip"));
+                var zip = Recorder.Save(stem + ".zip");
+                written.Add(zip);
                 if (WriteHtml) written.AddRange(Recorder.ExportHtml(stem + ".html", EmbedVideoInHtml));
+                if (WriteMarkdown) written.AddRange(WriteReport(stem, zip, WriteHtml ? stem + ".html" : null));
                 foreach (var f in written) attach?.Invoke(f);
             }
             // The video is inside the zip (and in or next to the HTML), so the raw recording is no longer needed.
             if (_videoPath != null) TryDelete(_videoPath);
             return written;
+        }
+
+        IEnumerable<string> WriteReport(string stem, string zip, string? html)
+        {
+            var events = Recorder.Events;
+            var meta = Recorder.GetMetadata();
+            var step = TraceAnalysis.FailureStep(meta, events, out _);
+            var captured = step?.CauseSeq is int c ? events.FirstOrDefault(e => e.Seq == c) ?? step : step;
+            var imageId = captured?.ScreenshotAfter ?? captured?.ScreenshotBefore;
+            var image = imageId == null ? null : Recorder.GetResource(imageId);
+            string? imageFile = null;
+            if (image != null && imageId != null)
+            {
+                imageFile = stem + Path.GetExtension(imageId);
+                File.WriteAllBytes(imageFile, image);
+            }
+
+            var md = stem + ".md";
+            File.WriteAllText(md, TraceReport.Markdown(meta, events, Recorder.GetResource,
+                Path.GetFileName(zip), html == null ? null : Path.GetFileName(html), imageFile == null ? null : Path.GetFileName(imageFile)),
+                new System.Text.UTF8Encoding(false));
+            yield return md;
+            if (imageFile != null) yield return imageFile;
         }
 
         static string SafeName(string name)
