@@ -1,137 +1,376 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WinTrace Viewer</title>
+<title>WinTrace</title>
 <style>
-:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d9d9de;--sel:#e8f0fe;--err:#c62828;--ok:#2e7d32;--log:#8e8e93;--acc:#1a73e8}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#98989d;--line:#38383a;--sel:#223049;--err:#ef5350;--ok:#66bb6a;--acc:#8ab4f8}}
+:root{--bg:#ffffff;--panel:#f6f7f9;--fg:#1d1f23;--mut:#646a73;--line:#dfe2e7;--sel:#e7effd;--hover:#f0f3f8;
+  --acc:#1a64d6;--err:#c62828;--err-bg:#fdecea;--ok:#2e7d32;--log:#8a9099;--hit:#fbc02d66;--box:#1a64d6;--pick:#e65100;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17181b;--panel:#1f2125;--fg:#eceef1;--mut:#9aa0a8;
+  --line:#33363c;--sel:#22314a;--hover:#262a31;--acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--ok:#6cc070;--log:#80868f;
+  --hit:#fbc02d44;--box:#7fb0ff;--pick:#ffab40;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#17181b;--panel:#1f2125;--fg:#eceef1;--mut:#9aa0a8;--line:#33363c;--sel:#22314a;--hover:#262a31;
+  --acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--ok:#6cc070;--log:#80868f;--hit:#fbc02d44;--box:#7fb0ff;--pick:#ffab40;color-scheme:dark}
 *{box-sizing:border-box}html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;display:flex;flex-direction:column}
-header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
-header h1{font-size:15px;margin:0}header small{color:var(--mut)}
-#tl{position:relative;height:34px;margin:8px 16px;border:1px solid var(--line);border-radius:4px;background:var(--sel);cursor:pointer}
-#tl .seg{position:absolute;top:4px;bottom:4px;min-width:3px;background:var(--ok);border-radius:2px;opacity:.85}
-#tl .seg.error{background:var(--err)}#tl .seg.log{background:var(--log);top:12px;bottom:12px}
-#tl .seg.on{outline:2px solid var(--acc);opacity:1}#tl #cursor{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 10px;cursor:pointer}
+button:hover{background:var(--hover)}button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+input[type=search]{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+code,pre,.mono{font-family:var(--mono);font-size:12.5px}
+pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:auto;border-radius:6px;margin:0}
+.mut{color:var(--mut)}.err{color:var(--err)}
+/* header */
+.top{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px;min-width:0}.brand svg{flex:none}
+.brand h1{font-size:15px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:12px;padding:1px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--mut)}
+.chip.bad{color:var(--err);border-color:var(--err);background:var(--err-bg)}.chip.good{color:var(--ok)}
+.spacer{flex:1}.icon{width:30px;padding:3px 0;text-align:center}
+#banner{display:flex;gap:10px;align-items:center;padding:8px 16px;background:var(--err-bg);color:var(--err);border-bottom:1px solid var(--line);cursor:pointer}
+#banner b{white-space:nowrap}#banner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* timeline */
+#tlwrap{position:relative;padding:4px 16px 8px;border-bottom:1px solid var(--line)}
+#ticks{position:relative;height:16px;font-size:11px;color:var(--mut)}#ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+#ticks span:first-child{transform:none}
+#tl{position:relative;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;overflow:hidden}
+#tl .seg{position:absolute;top:5px;bottom:5px;min-width:3px;background:var(--ok);border-radius:2px;opacity:.8}
+#tl .seg.error{background:var(--err);opacity:1}#tl .seg.log{background:var(--log);top:12px;bottom:12px;width:2px!important;min-width:2px}
+#tl .seg.on{outline:2px solid var(--acc);outline-offset:1px;opacity:1}#tl .seg.dim{opacity:.15}
+#cursor{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none;z-index:2}
+#tip{position:absolute;z-index:20;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 6px 24px #0003;pointer-events:none;max-width:280px;font-size:12px}
+#tip img{display:block;max-width:260px;max-height:150px;margin-top:6px;border:1px solid var(--line)}
+/* layout */
 #body{flex:1;display:flex;min-height:0}
-#side{width:360px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-#filters{padding:8px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
-#filters input[type=search]{flex:1;min-width:120px;padding:4px 6px}
+#side{width:340px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+#filters{padding:8px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}#filters input{flex:1;min-width:140px}
+.seg-btns{display:flex}.seg-btns button{border-radius:0;font-size:12px}.seg-btns button:first-child{border-radius:6px 0 0 6px}
+.seg-btns button:last-child{border-radius:0 6px 6px 0}.seg-btns button+button{border-left:0}.seg-btns button[aria-pressed=true]{background:var(--sel);color:var(--acc)}
 #list{overflow:auto;flex:1}
-.ev{padding:7px 12px;border-bottom:1px solid var(--line);cursor:pointer}.ev:hover,.ev.on{background:var(--sel)}
-.ev .n{font-weight:600}.ev .t{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ev.error .n{color:var(--err)}.ev.log .n{font-weight:400;color:var(--mut)}
-.grp{padding:5px 12px;font-size:12px;text-transform:uppercase;color:var(--mut);background:var(--sel)}
-#main{flex:1;overflow:auto;padding:16px;min-width:0}
-.shots{display:flex;gap:12px;flex-wrap:wrap}.shots figure{margin:0;flex:1;min-width:260px}
-.shots img{max-width:100%;border:1px solid var(--line);cursor:zoom-in}figcaption{color:var(--mut);margin-bottom:4px}
-video{max-width:100%;max-height:280px;background:#000;margin-bottom:12px}
-pre{background:var(--sel);padding:10px;overflow:auto;max-height:360px;border-radius:6px}
-.err{color:var(--err);font-weight:600}table{border-collapse:collapse}td{padding:2px 12px 2px 0;vertical-align:top}
-.k{color:var(--mut);font-size:12px}
-details.stack summary{cursor:pointer;color:var(--mut)}
-.tree{font:12px ui-monospace,Consolas,monospace;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px}
-.tree details{margin-left:14px}.tree summary{cursor:pointer;white-space:nowrap}.tree .leaf{margin-left:28px;white-space:nowrap}
-.tree .tag{color:var(--acc);font-weight:600}.tree .hit{background:#fbc02d55}
-.tools{display:flex;gap:8px;align-items:center;margin:8px 0}
-button{font:inherit;padding:2px 8px;cursor:pointer}
-@media(max-width:760px){#body{flex-direction:column}#side{width:auto;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}}
+.grp{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--mut);background:var(--panel);border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.grp .car{transition:transform .15s;display:inline-block}.grp.closed .car{transform:rotate(-90deg)}
+.ev{display:grid;grid-template-columns:18px 1fr auto;gap:2px 8px;align-items:baseline;padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
+.ev:hover{background:var(--hover)}.ev[aria-selected=true]{background:var(--sel)}
+.ev .st{font-weight:700;text-align:center}.ev.action .st{color:var(--ok)}.ev.error .st{color:var(--err)}.ev.log .st{color:var(--log)}
+.ev .n{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev.error .n{color:var(--err)}.ev.log .n{font-weight:400;color:var(--mut);white-space:normal}
+.ev .d{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.ev .t{grid-column:2/4;color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)}
+.ev .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--acc);opacity:.35}
+#main{flex:1;overflow:auto;min-width:0}#step{min-width:0;max-width:100%}
+#empty{padding:40px;color:var(--mut)}
+.stephead{padding:14px 18px 0}.stephead h2{margin:0;font-size:18px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.stephead h2 .seq{color:var(--mut);font-weight:400;font-size:14px}
+.target{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}.target code{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:2px 6px;word-break:break-all}
+.metaline{font-size:12.5px;color:var(--mut);display:flex;gap:14px;flex-wrap:wrap}
+.errbox{margin-top:10px;padding:8px 10px;border-radius:6px;background:var(--err-bg);color:var(--err);font-weight:600}
+.tabs{display:flex;gap:2px;max-width:100%;padding:0 18px;border-bottom:1px solid var(--line);margin-top:12px;overflow-x:auto}
+.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--mut);white-space:nowrap}
+.tabs button[aria-selected=true]{color:var(--fg);border-bottom-color:var(--acc)}.tabs .cnt{font-size:11px;background:var(--panel);border-radius:8px;padding:0 6px;margin-left:4px}
+.tab{padding:14px 18px 24px}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.shots figure{margin:0}.shots figcaption{color:var(--mut);font-size:12px;margin-bottom:4px}
+.shots video{width:100%;background:#000;border-radius:4px;display:block}
+.shots img{width:100%;border:1px solid var(--line);border-radius:4px;cursor:zoom-in;display:block;background:var(--panel)}
+.note{color:var(--mut);padding:10px 0}
+table.kv{border-collapse:collapse;width:100%}table.kv td{padding:5px 10px 5px 0;vertical-align:top;border-bottom:1px solid var(--line)}
+table.kv td:first-child{color:var(--mut);width:180px;white-space:nowrap}
+h3{font-size:13px;margin:18px 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.03em}h3:first-child{margin-top:0}
+/* UI tree + picker */
+.treegrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.pickwrap{position:relative;align-self:start;border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:crosshair}
+.pickwrap img{display:block;width:100%}
+.hl{position:absolute;pointer-events:none;border:2px solid var(--box);background:color-mix(in srgb,var(--box) 15%,transparent);display:none}
+.hl.pick{border-color:var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent)}
+.tools{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}.tools input{flex:1;min-width:160px}
+.tree{font:12px var(--mono);max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px}
+.tree details{margin-left:14px}.tree>details{margin-left:0}.tree summary{cursor:pointer;white-space:nowrap;border-radius:3px}
+.tree .leaf{margin-left:16px;white-space:nowrap;cursor:pointer;border-radius:3px}.tree .leaf::before{content:"• ";color:var(--mut)}
+.tree .tag{color:var(--acc);font-weight:600}.tree .hit{background:var(--hit)}.tree .cur{outline:2px solid var(--pick);outline-offset:-1px}
+.tree summary:hover,.tree .leaf:hover{background:var(--hover)}
+.loc{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)}.loc code{flex:1;word-break:break-all}
+.loc .why{font-size:11px;color:var(--mut);white-space:nowrap}
+/* overlays */
+.overlay{position:fixed;inset:0;z-index:50;background:#000c;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px}
+.overlay[hidden]{display:none}.overlay img{max-width:100%;max-height:calc(100% - 50px);object-fit:contain;background:#fff}
+.lbbar{display:flex;gap:10px;align-items:center;color:#fff;margin-top:10px}.lbbar button{background:#ffffff22;color:#fff;border-color:#ffffff44}
+.dialog{background:var(--bg);color:var(--fg);border-radius:10px;padding:18px 22px;max-width:440px;width:100%}
+.dialog h2{margin:0 0 10px;font-size:16px}.dialog td{padding:3px 12px 3px 0}
+kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--panel)}
+@media(max-width:820px){body{overflow:auto;overflow-x:hidden}#body{flex-direction:column;min-width:0;width:100%}#side{width:auto;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}
+  #main{overflow:visible}.treegrid{grid-template-columns:minmax(0,1fr)}.top{padding:8px 12px}#tlwrap,.stephead,.tabs,.tab{padding-left:12px;padding-right:12px}}
 </style></head><body>
-<header id="hd"></header>
-<div id="tl"><div id="cursor"></div></div>
+<header class="top">
+ <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2 8h20" stroke="currentColor" stroke-width="2"/><path d="M6 15l3-3 3 3 4-4 2 2" fill="none" stroke="#1a64d6" stroke-width="2"/></svg><h1 id="title">WinTrace</h1></div>
+ <div class="chips" id="chips"></div><div class="spacer"></div>
+ <button class="icon" id="themeBtn" title="Toggle light/dark theme" aria-label="Toggle theme"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
+ <button class="icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+</header>
+<div id="banner" hidden role="button" tabindex="0"></div>
+<div id="tlwrap"><div id="ticks"></div><div id="tl" aria-label="Timeline"><div id="cursor"></div></div><div id="tip" hidden></div></div>
 <div id="body">
- <div id="side"><div id="filters">
-  <input type="search" id="q" placeholder="Filter steps (/ to focus)">
-  <label><input type="checkbox" id="onlyErr"> errors</label>
-  <label><input type="checkbox" id="hideLog"> hide logs</label>
- </div><div id="list"></div></div>
- <div id="main"><p>Select a step. Use <b>↑/↓</b> or <b>j/k</b> to navigate.</p></div>
+ <aside id="side">
+  <div id="filters"><input type="search" id="q" placeholder="Filter steps  ( / )" aria-label="Filter steps">
+   <div class="seg-btns" role="group" aria-label="Show"><button id="fAll" aria-pressed="true">All</button><button id="fErr" aria-pressed="false">Errors</button><button id="fAct" aria-pressed="false">No logs</button></div></div>
+  <div id="list" role="listbox" aria-label="Steps"></div>
+ </aside>
+ <main id="main">
+  <div id="empty">Select a step on the left or on the timeline.</div>
+  <section id="step" hidden>
+   <div class="stephead" id="stephead"></div>
+   <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="shots">Screenshots</button><button role="tab" data-tab="details">Details</button>
+    <button role="tab" data-tab="tree">UI tree</button><button role="tab" data-tab="logs">Logs</button><button role="tab" data-tab="info">Trace info</button>
+   </nav>
+   <div class="tab" id="tabbody" role="tabpanel"></div>
+  </section>
+ </main>
 </div>
+<div class="overlay" id="lightbox" hidden><img id="lbimg" alt=""><div class="lbbar"><button id="lbprev" aria-label="Previous">←</button><span id="lbcap"></span><button id="lbnext" aria-label="Next">→</button><button id="lbclose">Close (Esc)</button></div></div>
+<div class="overlay" id="help" hidden><div class="dialog" role="dialog" aria-label="Keyboard shortcuts"><h2>Keyboard shortcuts</h2><table>
+ <tr><td><kbd>↓</kbd> <kbd>j</kbd> / <kbd>↑</kbd> <kbd>k</kbd></td><td>Next / previous step</td></tr>
+ <tr><td><kbd>e</kbd></td><td>Next error</td></tr><tr><td><kbd>/</kbd></td><td>Filter steps</td></tr>
+ <tr><td><kbd>1</kbd> … <kbd>5</kbd></td><td>Switch tab</td></tr><tr><td><kbd>t</kbd></td><td>Toggle theme</td></tr>
+ <tr><td><kbd>Esc</kbd></td><td>Close / leave the filter</td></tr></table>
+ <p class="mut">In <b>UI tree</b>, hover the screenshot to highlight elements; click to pick one and copy its locator.</p>
+ <p style="text-align:right;margin:0"><button id="helpClose">Close</button></p></div></div>
 <script>
 const D=/*__TRACE_DATA__*/null;
+(function(){
+'use strict';
 const $=s=>document.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store={get(k){try{return localStorage.getItem('wintrace.'+k)}catch(_){return null}},set(k,v){try{localStorage.setItem('wintrace.'+k,v)}catch(_){}}};
+const fmtMs=ms=>ms>=1000?(ms/1000).toFixed(ms>=10000?1:2)+' s':Math.round(ms)+' ms';
+
+// theme
+const applyTheme=t=>{if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme};
+applyTheme(store.get('theme'));
+const toggleTheme=()=>{const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  const t=dark?'light':'dark';applyTheme(t);store.set('theme',t)};
+$('#themeBtn').onclick=toggleTheme;
+
+if(!D){$('#empty').textContent='No trace data in this file. Build reports with TraceRecorder.SaveHtml or "wintrace show trace.zip".';return}
+
+const R=D.resources||{},EV=D.events||[];
 const t0=Date.parse(D.meta.started);
 const off=e=>Date.parse(e.start)-t0;
-const total=Math.max(1,...D.events.map(e=>off(e)+(e.durationMs||0)));
-const errs=D.events.filter(e=>e.kind==='error').length;
-$('#hd').innerHTML=`<h1>${esc(D.meta.title)}</h1><small>${esc(D.meta.framework)} · ${esc(D.meta.started)} · ${esc(D.meta.machine)}</small>
- <small>${D.events.length} events · ${(total/1000).toFixed(1)} s · ${errs?`<b class="err">${errs} error(s)</b>`:'no errors'}</small>`;
+const total=Math.max(1,...EV.map(e=>off(e)+(e.durationMs||0)));
+const maxDur=Math.max(1,...EV.filter(e=>e.kind!=='log').map(e=>e.durationMs||0));
+const errors=EV.filter(e=>e.kind==='error');
 const video=(D.meta.videos||[]).find(v=>v.src);
-let cur=-1;const items=[];
-const list=$('#list'),tl=$('#tl');
-let lastG=null;
-D.events.forEach((e,i)=>{
-  if(e.group!==lastG){lastG=e.group;if(e.group){const g=document.createElement('div');g.className='grp';g.textContent=e.group;g.dataset.g=1;list.appendChild(g)}}
-  const d=document.createElement('div');d.className='ev '+e.kind;
-  d.innerHTML=`<div class="n">${esc(e.name)} <span class="k">${e.durationMs?Math.round(e.durationMs)+' ms':''}</span></div><div class="t">${esc(e.target||'')}</div>`;
-  d.onclick=()=>select(i,true);list.appendChild(d);
-  const s=document.createElement('div');s.className='seg '+e.kind;
-  s.style.left=(off(e)/total*100)+'%';s.style.width=Math.max(0.3,(e.durationMs||0)/total*100)+'%';
-  s.title=e.name+(e.target?' · '+e.target:'');
-  s.onclick=ev=>{ev.stopPropagation();select(i,true)};tl.appendChild(s);
-  items.push({e,d,s});
-});
+document.title=(errors.length?'✗ ':'')+(D.meta.title||'WinTrace')+' · WinTrace';
+
+// header
+$('#title').textContent=D.meta.title||'WinTrace';
+const steps=EV.filter(e=>e.kind!=='log').length;
+$('#chips').innerHTML=[
+  errors.length?`<span class="chip bad">${errors.length} failed</span>`:`<span class="chip good">passed</span>`,
+  `<span class="chip">${steps} steps</span>`,`<span class="chip">${fmtMs(total)}</span>`,
+  D.meta.framework?`<span class="chip">${esc(D.meta.framework)}</span>`:'',
+  video?`<span class="chip">video</span>`:''].join('');
+if(errors.length){const b=$('#banner'),e=errors[0];b.hidden=false;
+  b.innerHTML=`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`;
+  b.onclick=b.onkeydown=ev=>{if(ev.type==='click'||ev.key==='Enter')select(EV.indexOf(e))}}
+
+// timeline + ticks
+const tl=$('#tl'),tip=$('#tip');
+(function ticks(){const target=total/8,p=Math.pow(10,Math.floor(Math.log10(target)));const step=[1,2,5,10].map(m=>m*p).find(s=>s>=target)||p*10;
+  let h='';for(let t=0;t<=total;t+=step)h+=`<span style="left:${t/total*100}%">${fmtMs(t).replace(' ','')}</span>`;$('#ticks').innerHTML=h})();
+const items=EV.map((e,i)=>({e,i}));
+items.forEach(it=>{const e=it.e,s=document.createElement('div');s.className='seg '+e.kind;
+  s.style.left=(off(e)/total*100)+'%';s.style.width=Math.max(.3,(e.durationMs||0)/total*100)+'%';
+  s.onclick=ev=>{ev.stopPropagation();select(it.i)};
+  s.onmouseenter=()=>{const shot=R[e.screenshotAfter]||R[e.screenshotBefore];
+    tip.innerHTML=`<b class="${e.kind==='error'?'err':''}">${esc(e.name)}</b> <span class="mut">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target?`<div class="mono">${esc(e.target)}</div>`:''}${shot&&e.kind!=='log'?`<img src="${shot}" alt="">`:''}`;
+    tip.hidden=false;const r=s.getBoundingClientRect(),w=$('#tlwrap').getBoundingClientRect();
+    tip.style.left=Math.min(w.width-290,Math.max(8,r.left-w.left))+'px';tip.style.top=(r.bottom-w.top+6)+'px'};
+  s.onmouseleave=()=>{tip.hidden=true};
+  tl.appendChild(s);it.seg=s});
 tl.onclick=ev=>{const r=tl.getBoundingClientRect();const ms=(ev.clientX-r.left)/r.width*total;
-  const v=$('#vid');if(v&&video)v.currentTime=Math.max(0,(t0+ms-Date.parse(video.started))/1000)};
-function select(i,seek){
-  if(cur>=0){items[cur].d.classList.remove('on');items[cur].s.classList.remove('on')}
-  cur=i;const {e,d,s}=items[i];d.classList.add('on');s.classList.add('on');d.scrollIntoView({block:'nearest'});
-  const R=D.resources,fig=(l,k)=>e[k]&&R[e[k]]?`<figure><figcaption>${l}</figcaption><img src="${R[e[k]]}" onclick="window.open(this.src)"></figure>`:'';
-  const p=Object.entries(e.params||{}).map(([k,v])=>`<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
-  const prev=$('#vid'),keep=prev&&video;
-  $('#main').innerHTML=`${video?`<video id="vid" src="${esc(video.src)}" controls></video>`:''}
-   <h2>#${e.seq} ${esc(e.name)}</h2>${e.target?`<p>Target: <code id="tgt">${esc(e.target)}</code> <button id="cp">Copy</button></p>`:''}
-   ${e.group?`<p class="k">Group: ${esc(e.group)}</p>`:''}
-   <p class="k">+${(off(e)/1000).toFixed(2)} s · ${Math.round(e.durationMs||0)} ms</p>
-   ${e.error?`<p class="err">${esc(e.error)}</p>`:''}
-   ${e.errorDetail?`<details class="stack"><summary>Stack trace</summary><pre>${esc(e.errorDetail)}</pre></details>`:''}<table>${p}</table>
-   <div class="shots">${fig('Before','screenshotBefore')}${fig('After','screenshotAfter')}</div>
-   ${e.snapshot&&R[e.snapshot]?`<h3>UI snapshot</h3><div id="snap"></div>`:''}`;
-  if(e.snapshot&&R[e.snapshot])renderSnapshot($('#snap'),R[e.snapshot],e.snapshot);
-  const cp=$('#cp');if(cp)cp.onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(e.target).then(()=>cp.textContent='Copied');
-  const v=$('#vid');
-  if(v){v.currentTime=Math.max(0,(Date.parse(e.start)-Date.parse(video.started))/1000);v.ontimeupdate=()=>cursor(v)}
-  $('#cursor').style.left=(off(e)/total*100)+'%';
-}
-// UIA trees (WinAppDriver/NovaWindows PageSource) as a collapsible, searchable tree; anything else as text.
-function renderSnapshot(host,text,name){
-  const doc=name.endsWith('.xml')?new DOMParser().parseFromString(text,'application/xml'):null;
-  if(!doc||doc.querySelector('parsererror')){host.innerHTML=`<pre>${esc(text)}</pre>`;return}
-  const label=n=>{const a=k=>n.getAttribute(k);const parts=[['Name',a('Name')],['AutomationId',a('AutomationId')],['ClassName',a('ClassName')]]
-    .filter(([,v])=>v).map(([k,v])=>`${k}="${esc(v)}"`).join(' ');return `<span class="tag">${esc(n.tagName)}</span> ${parts}`};
-  const node=(n,depth)=>{const kids=[...n.children];const attrs=[...n.attributes].map(a=>`${a.name}=${a.value}`).join('\n');
-    return kids.length?`<details${depth<2?' open':''}><summary title="${esc(attrs)}">${label(n)}</summary>${kids.map(c=>node(c,depth+1)).join('')}</details>`
-      :`<div class="leaf" title="${esc(attrs)}">${label(n)}</div>`};
-  host.innerHTML=`<div class="tools"><input type="search" id="sq" placeholder="Find in UI tree (Name, AutomationId...)"><span class="k" id="sc"></span>
-    <button id="raw">Raw XML</button></div><div class="tree">${node(doc.documentElement,0)}</div>`;
-  $('#raw').onclick=()=>{host.innerHTML=`<pre>${esc(text)}</pre>`};
-  $('#sq').oninput=ev=>{const q=ev.target.value.toLowerCase();let n=0;
-    host.querySelectorAll('summary,.leaf').forEach(el=>{const hit=q&&(el.textContent+' '+el.title).toLowerCase().includes(q);el.classList.toggle('hit',!!hit);
-      if(hit){n++;for(let p=el.parentElement;p&&p!==host;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true}});
-    $('#sc').textContent=q?n+' match(es)':'';const first=host.querySelector('.hit');if(first)first.scrollIntoView({block:'nearest'})};
-}
-function cursor(v){const ms=Date.parse(video.started)+v.currentTime*1000-t0;$('#cursor').style.left=Math.min(100,Math.max(0,ms/total*100))+'%'}
-function visible(){return items.map((x,i)=>x.d.style.display!=='none'?i:-1).filter(i=>i>=0)}
+  if(vidEl&&tab==='shots'){vidEl.currentTime=Math.max(0,(t0+ms-Date.parse(video.started))/1000);return}
+  let best=0;items.forEach(it=>{if(off(it.e)<=ms)best=it.i});select(best)};
+
+// list with collapsible groups
+const list=$('#list');let lastG=null,grpEl=null;const closed=new Set();
+items.forEach(it=>{const e=it.e;
+  if(e.group!==lastG){lastG=e.group;grpEl=null;
+    if(e.group){grpEl=document.createElement('div');grpEl.className='grp';const depth=e.group.split(' / ').length-1;
+      grpEl.style.paddingLeft=(10+depth*12)+'px';grpEl.innerHTML=`<span class="car">▾</span>${esc(e.group.split(' / ').pop())}`;
+      grpEl.dataset.g=e.group;const g=e.group;grpEl.onclick=()=>{closed.has(g)?closed.delete(g):closed.add(g);applyFilter()};list.appendChild(grpEl)}}
+  const d=document.createElement('div');d.className='ev '+e.kind;d.setAttribute('role','option');d.id='ev'+e.seq;
+  const icon=e.kind==='error'?'✗':e.kind==='log'?'•':'✓';
+  d.innerHTML=`<span class="st">${icon}</span><span class="n">${esc(e.name)}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target?`<span class="t">${esc(e.target)}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
+  d.onclick=()=>select(it.i);list.appendChild(d);it.row=d;it.grp=grpEl});
+
+let mode='all';
+const setMode=m=>{mode=m;[['fAll','all'],['fErr','err'],['fAct','act']].forEach(([id,v])=>$('#'+id).setAttribute('aria-pressed',m===v));applyFilter()};
+$('#fAll').onclick=()=>setMode('all');$('#fErr').onclick=()=>setMode('err');$('#fAct').onclick=()=>setMode('act');
+function visibleRow(it){const e=it.e,q=$('#q').value.toLowerCase();
+  const txt=(e.name+' '+(e.target||'')+' '+(e.error||'')+' '+(e.group||'')+' '+Object.values(e.params||{}).join(' ')).toLowerCase();
+  return (!q||txt.includes(q))&&(mode!=='err'||e.kind==='error')&&!(mode==='act'&&e.kind==='log')}
 function applyFilter(){
-  const q=$('#q').value.toLowerCase(),oe=$('#onlyErr').checked,hl=$('#hideLog').checked;
-  items.forEach(({e,d,s})=>{
-    const ok=(!q||(e.name+' '+(e.target||'')+' '+(e.error||'')+' '+Object.values(e.params||{}).join(' ')).toLowerCase().includes(q))
-      &&(!oe||e.kind==='error')&&!(hl&&e.kind==='log');
-    d.style.display=ok?'':'none';s.style.opacity=ok?'':'.15';
-  });
-  list.querySelectorAll('.grp').forEach(g=>{let n=g.nextElementSibling,any=false;
-    while(n&&!n.dataset.g){if(n.style.display!=='none')any=true;n=n.nextElementSibling}g.style.display=any?'':'none'});
-}
-['q','onlyErr','hideLog'].forEach(id=>$('#'+id).addEventListener('input',applyFilter));
+  items.forEach(it=>{const ok=visibleRow(it);const hiddenByGroup=!!it.e.group&&[...closed].some(g=>it.e.group===g||it.e.group.startsWith(g+' / '));
+    it.row.hidden=!ok||hiddenByGroup;it.match=ok;it.seg.classList.toggle('dim',!ok)});
+  list.querySelectorAll('.grp').forEach(g=>{const name=g.dataset.g;g.classList.toggle('closed',closed.has(name));
+    g.hidden=!items.some(it=>it.match&&it.e.group&&(it.e.group===name||it.e.group.startsWith(name+' / ')))})}
+$('#q').addEventListener('input',applyFilter);
+
+// selection + tabs
+let cur=-1,tab=store.get('tab')||'shots';
+const tabs=[...document.querySelectorAll('#tabs button')];
+tabs.forEach(b=>b.onclick=()=>{tab=b.dataset.tab;store.set('tab',tab);renderTab()});
+function select(i){if(i<0||i>=items.length)return;
+  if(cur>=0){items[cur].row.setAttribute('aria-selected','false');items[cur].seg.classList.remove('on')}
+  cur=i;const it=items[i],e=it.e;it.row.setAttribute('aria-selected','true');it.seg.classList.add('on');
+  if(it.grp&&closed.size){[...closed].forEach(g=>{if(e.group===g||(e.group||'').startsWith(g+' / '))closed.delete(g)});applyFilter()}
+  it.row.scrollIntoView({block:'nearest'});
+  $('#empty').hidden=true;$('#step').hidden=false;
+  const icon=e.kind==='error'?'<span class="err">✗</span>':e.kind==='log'?'<span class="mut">•</span>':'<span style="color:var(--ok)">✓</span>';
+  $('#stephead').innerHTML=`<h2>${icon} ${esc(e.name)} <span class="seq">#${e.seq}</span></h2>
+    ${e.target?`<div class="target"><code>${esc(e.target)}</code><button id="cpTarget">Copy</button></div>`:''}
+    <div class="metaline">${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
+    ${e.error?`<div class="errbox">${esc(e.error)}</div>`:''}`;
+  copyBtn($('#cpTarget'),e.target);
+  if(vidEl)vidEl.currentTime=Math.max(0,(Date.parse(e.start)-Date.parse(video.started))/1000);
+  $('#cursor').style.left=(off(e)/total*100)+'%';
+  history.replaceState(null,'','#'+e.seq);
+  renderTab()}
+function copyBtn(b,text){if(!b)return;b.onclick=()=>{const done=()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1200)};
+  if(navigator.clipboard)navigator.clipboard.writeText(text).then(done,()=>fallback());else fallback();
+  function fallback(){const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');done()}catch(_){}t.remove()}}}
+
+// One <video> for the whole page, moved into the Screenshots tab on each render so playback position survives.
+let vidEl=null;
+if(video){vidEl=document.createElement('video');vidEl.id='vid';vidEl.src=video.src;vidEl.controls=true;vidEl.preload='metadata';
+  vidEl.ontimeupdate=()=>{const ms=Date.parse(video.started)+vidEl.currentTime*1000-t0;$('#cursor').style.left=Math.min(100,Math.max(0,ms/total*100))+'%'}}
+
+function renderTab(){const e=items[cur].e,body=$('#tabbody');
+  const counts={logs:EV.filter(x=>x.kind==='log').length,tree:e.snapshot&&R[e.snapshot]?1:0};
+  tabs.forEach(b=>{b.setAttribute('aria-selected',b.dataset.tab===tab);const c=b.dataset.tab==='logs'?counts.logs:b.dataset.tab==='tree'&&counts.tree?'●':'';
+    b.innerHTML=b.textContent.replace(/[0-9●]+$/,'').trim()+(c?`<span class="cnt">${c}</span>`:'')});
+  if(tab==='shots')return shotsTab(e,body);
+  if(tab==='details')return detailsTab(e,body);
+  if(tab==='tree')return treeTab(e,body);
+  if(tab==='logs')return logsTab(e,body);
+  return infoTab(body)}
+
+// screenshots + lightbox
+let lb=[],lbi=0;
+function shotsTab(e,body){const shots=[['Before',e.screenshotBefore],['After',e.screenshotAfter]].filter(([,k])=>k&&R[k]);
+  if(!shots.length&&!vidEl){body.innerHTML=`<p class="note">${e.kind==='log'?'Log entries have no screenshots.':'No screenshots for this step. Check that the trace source can take screenshots and that TraceOptions.Screenshots is on.'}</p>`;return}
+  body.innerHTML=`<div class="shots">${shots.map(([l,k],j)=>`<figure><figcaption>${l}</figcaption><img src="${R[k]}" data-j="${j}" alt="${l} screenshot"></figure>`).join('')}${vidEl?'<figure id="vidfig"><figcaption>Screen recording (synced to this step)</figcaption></figure>':''}</div>`;
+  if(vidEl)$('#vidfig').appendChild(vidEl);
+  body.querySelectorAll('img').forEach(img=>img.onclick=()=>openLb(shots.map(([l,k])=>({cap:`${l} · #${e.seq} ${e.name}`,src:R[k]})),+img.dataset.j))}
+function openLb(list,j){lb=list;lbi=j;$('#lightbox').hidden=false;showLb()}
+function showLb(){$('#lbimg').src=lb[lbi].src;$('#lbcap').textContent=lb[lbi].cap;$('#lbprev').disabled=lbi===0;$('#lbnext').disabled=lbi===lb.length-1}
+$('#lbprev').onclick=()=>{if(lbi>0){lbi--;showLb()}};$('#lbnext').onclick=()=>{if(lbi<lb.length-1){lbi++;showLb()}};
+$('#lbclose').onclick=()=>$('#lightbox').hidden=true;$('#lightbox').onclick=ev=>{if(ev.target.id==='lightbox')ev.target.hidden=true};
+
+function detailsTab(e,body){const p=Object.entries(e.params||{});
+  body.innerHTML=`<h3>Step</h3><table class="kv"><tr><td>Name</td><td>${esc(e.name)}</td></tr><tr><td>Kind</td><td>${esc(e.kind)}</td></tr>
+    ${e.target?`<tr><td>Target</td><td class="mono">${esc(e.target)}</td></tr>`:''}${e.group?`<tr><td>Group</td><td>${esc(e.group)}</td></tr>`:''}
+    <tr><td>Started</td><td>${esc(new Date(e.start).toLocaleString())} (+${fmtMs(off(e))})</td></tr>${e.kind!=='log'?`<tr><td>Duration</td><td>${fmtMs(e.durationMs||0)}</td></tr>`:''}</table>
+    ${p.length?`<h3>Parameters</h3><table class="kv">${p.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`).join('')}</table>`:''}
+    ${e.error?`<h3>Error</h3><div class="errbox">${esc(e.error)}</div>`:''}
+    ${e.errorDetail?`<h3>Stack trace</h3><pre>${esc(e.errorDetail)}</pre>`:''}`}
+
+function logsTab(e,body){const logs=items.filter(it=>it.e.kind==='log');
+  if(!logs.length){body.innerHTML='<p class="note">No log entries. Add some with rec.Log("message").</p>';return}
+  body.innerHTML=`<table class="kv">${logs.map(it=>`<tr data-i="${it.i}" style="cursor:pointer${it.i===cur?';background:var(--sel)':''}"><td class="mono">+${fmtMs(off(it.e))}</td><td>${esc(it.e.name)}</td></tr>`).join('')}</table>`;
+  body.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>select(+tr.dataset.i))}
+
+function infoTab(body){const m=D.meta;
+  body.innerHTML=`<table class="kv"><tr><td>Title</td><td>${esc(m.title)}</td></tr><tr><td>Framework</td><td>${esc(m.framework||'—')}</td></tr>
+    <tr><td>Started</td><td>${esc(new Date(m.started).toLocaleString())}</td></tr><tr><td>Stopped</td><td>${m.stopped?esc(new Date(m.stopped).toLocaleString()):'—'}</td></tr>
+    <tr><td>Duration</td><td>${fmtMs(total)}</td></tr><tr><td>Steps</td><td>${steps} (${errors.length} failed)</td></tr>
+    <tr><td>Log entries</td><td>${EV.length-steps}</td></tr><tr><td>Machine</td><td>${esc(m.machine||'—')}</td></tr><tr><td>OS</td><td>${esc(m.os||'—')}</td></tr>
+    <tr><td>Video</td><td>${video?esc(video.file):'—'}</td></tr><tr><td>Format version</td><td>${esc(m.formatVersion)}</td></tr></table>`}
+
+// UI tree with screenshot picker
+function rectOf(n){const a=k=>n.getAttribute(k);
+  if(a('x')!=null&&a('width')!=null){const r={x:+a('x'),y:+a('y'),w:+a('width'),h:+a('height')};return isFinite(r.x+r.y+r.w+r.h)?r:null}
+  const br=a('BoundingRectangle');if(!br)return null;const m=(br.match(/-?\d+(\.\d+)?/g)||[]).map(Number);if(m.length<4)return null;
+  return br.includes('][')?{x:m[0],y:m[1],w:m[2]-m[0],h:m[3]-m[1]}:{x:m[0],y:m[1],w:m[2],h:m[3]}}
+function locators(n){const a=k=>n.getAttribute(k)||'',q=s=>s.replace(/\\/g,'\\\\').replace(/"/g,'\\"'),x=s=>s.includes("'")?`"${s}"`:`'${s}'`;
+  const out=[];if(a('AutomationId'))out.push([`MobileBy.AccessibilityId("${q(a('AutomationId'))}")`,'fast, stable']);
+  if(a('Name'))out.push([`By.Name("${q(a('Name'))}")`,'fast; changes with language']);
+  if(a('ClassName'))out.push([`By.ClassName("${q(a('ClassName'))}")`,'often not unique']);
+  const attr=a('AutomationId')?['AutomationId',a('AutomationId')]:a('Name')?['Name',a('Name')]:null;
+  if(attr)out.push([`By.XPath("//${n.tagName}[@${attr[0]}=${q(x(attr[1]))}]")`,'slow on WinAppDriver']);
+  return out}
+function treeTab(e,body){const text=e.snapshot&&R[e.snapshot];
+  if(!text){body.innerHTML=`<p class="note">No UI snapshot for this step. By default WinTrace captures the UI tree only when a step fails, because it can be slow on WinAppDriver. Set <code>TraceOptions.Snapshots = SnapshotMode.Always</code> to capture it for every step.</p>`;return}
+  const doc=e.snapshot.endsWith('.xml')?new DOMParser().parseFromString(text,'application/xml'):null;
+  if(!doc||doc.querySelector('parsererror')){body.innerHTML=`<pre>${esc(text)}</pre>`;return}
+  const nodes=[],rects=[];
+  const label=n=>{const a=k=>n.getAttribute(k);return `<span class="tag">${esc(n.tagName)}</span> `+[['Name',a('Name')],['AutomationId',a('AutomationId')],['ClassName',a('ClassName')]]
+    .filter(([,v])=>v).map(([k,v])=>`${k}="${esc(v)}"`).join(' ')};
+  const build=(n,depth)=>{const i=nodes.push(n)-1;rects[i]=rectOf(n);const kids=[...n.children];
+    return kids.length?`<details${depth<2?' open':''} data-i="${i}"><summary data-i="${i}">${label(n)}</summary>${kids.map(c=>build(c,depth+1)).join('')}</details>`
+      :`<div class="leaf" data-i="${i}">${label(n)}</div>`};
+  const treeHtml=build(doc.documentElement,0);
+  const shot=R[e.screenshotAfter]||R[e.screenshotBefore];const root=rects[0];const canPick=!!(shot&&root&&root.w>0&&root.h>0);
+  body.innerHTML=`<div class="treegrid">${canPick?`<div><div class="pickwrap" id="pick"><img id="pickimg" src="${shot}" alt="Screenshot"><div class="hl" id="hlHover"></div><div class="hl pick" id="hlPick"></div></div>
+      <p class="mut" style="font-size:12px;margin:6px 0 0">Hover to highlight, click to pick an element.</p></div>`:''}
+    <div><div class="tools"><input type="search" id="sq" placeholder="Find (Name, AutomationId, ClassName…)" aria-label="Find in UI tree"><span class="mut" id="sc"></span><button id="raw">Raw XML</button></div>
+      <div class="tree" id="tree">${treeHtml}</div><div id="nodeinfo"></div></div></div>`;
+  const tree=$('#tree');let picked=-1;
+  // Map element rects onto the screenshot. Usually the screenshot shows the root element (app window or desktop);
+  // if it is larger, assume it is the whole screen in screen pixels.
+  let map=null;
+  const setupMap=()=>{const img=$('#pickimg');const W=img.naturalWidth,H=img.naturalHeight;
+    const same=Math.abs(W-root.w)<=2&&Math.abs(H-root.h)<=2,fitsScreen=root.x>=0&&root.y>=0&&root.x+root.w<=W&&root.y+root.h<=H&&!same;
+    map=fitsScreen?{ox:0,oy:0,sw:W,sh:H}:{ox:root.x,oy:root.y,sw:root.w,sh:root.h}};
+  const place=(el,r)=>{if(!r||!map){el.style.display='none';return}el.style.display='block';
+    el.style.left=(r.x-map.ox)/map.sw*100+'%';el.style.top=(r.y-map.oy)/map.sh*100+'%';el.style.width=r.w/map.sw*100+'%';el.style.height=r.h/map.sh*100+'%'};
+  const at=(cx,cy)=>{let best=-1,area=Infinity;rects.forEach((r,i)=>{if(r&&cx>=r.x&&cy>=r.y&&cx<=r.x+r.w&&cy<=r.y+r.h&&r.w*r.h<=area){best=i;area=r.w*r.h}});return best};
+  const pick=i=>{picked=i;tree.querySelectorAll('.cur').forEach(x=>x.classList.remove('cur'));
+    const el=tree.querySelector(`summary[data-i="${i}"],.leaf[data-i="${i}"]`);
+    if(el){for(let p=el.parentElement;p&&p!==tree;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;el.classList.add('cur');el.scrollIntoView({block:'nearest'})}
+    if(canPick)place($('#hlPick'),rects[i]);
+    const n=nodes[i],locs=locators(n);
+    $('#nodeinfo').innerHTML=`<h3 style="margin-top:14px">Locators</h3>${locs.length?locs.map((l,j)=>`<div class="loc"><code>${esc(l[0])}</code><span class="why">${esc(l[1])}</span><button data-j="${j}">Copy</button></div>`).join(''):'<p class="note">This element has no AutomationId, Name or ClassName.</p>'}
+      <h3>Attributes</h3><table class="kv">${[...n.attributes].filter(a=>a.value!=='').map(a=>`<tr><td>${esc(a.name)}</td><td class="mono">${esc(a.value)}</td></tr>`).join('')}</table>`;
+    $('#nodeinfo').querySelectorAll('button[data-j]').forEach(b=>copyBtn(b,locs[+b.dataset.j][0]))};
+  tree.addEventListener('click',ev=>{const t=ev.target.closest('[data-i]');if(t&&(t.tagName==='SUMMARY'||t.classList.contains('leaf')))pick(+t.dataset.i)});
+  tree.addEventListener('mouseover',ev=>{const t=ev.target.closest('summary,.leaf');if(t&&canPick&&map)place($('#hlHover'),rects[+t.dataset.i])});
+  tree.addEventListener('mouseleave',()=>{if(canPick)$('#hlHover').style.display='none'});
+  $('#raw').onclick=()=>{body.innerHTML=`<p><button id="back">← Tree view</button></p><pre>${esc(text)}</pre>`;$('#back').onclick=()=>treeTab(e,body)};
+  $('#sq').oninput=ev=>{const q=ev.target.value.toLowerCase();let n=0;
+    tree.querySelectorAll('summary,.leaf').forEach(el=>{const hit=!!q&&el.textContent.toLowerCase().includes(q);el.classList.toggle('hit',hit);
+      if(hit){n++;for(let p=el.parentElement;p&&p!==tree;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true}});
+    $('#sc').textContent=q?n+' match'+(n===1?'':'es'):'';const f=tree.querySelector('.hit');if(f)f.scrollIntoView({block:'nearest'})};
+  if(canPick){const img=$('#pickimg'),wrap=$('#pick');
+    const ready=()=>{setupMap();if(picked>=0)place($('#hlPick'),rects[picked])};if(img.complete)ready();else img.onload=ready;
+    const toScreen=ev=>{const r=img.getBoundingClientRect();return [map.ox+(ev.clientX-r.left)/r.width*map.sw,map.oy+(ev.clientY-r.top)/r.height*map.sh]};
+    let raf=0;wrap.onmousemove=ev=>{if(!map||raf)return;raf=requestAnimationFrame(()=>{raf=0;const [x,y]=toScreen(ev);const i=at(x,y);place($('#hlHover'),i>=0?rects[i]:null)})};
+    wrap.onmouseleave=()=>$('#hlHover').style.display='none';
+    wrap.onclick=ev=>{if(!map)return;const [x,y]=toScreen(ev);const i=at(x,y);if(i>=0)pick(i)}}
+  // On a failed "find", preselect the element whose AutomationId/Name is closest to the missing locator.
+  if(e.kind==='error'&&e.target){const want=(e.target.split(/[:=]\s*/).pop()||'').toLowerCase();
+    if(want){let best=-1,score=0;nodes.forEach((n,i)=>{const id=(n.getAttribute('AutomationId')||n.getAttribute('Name')||'').toLowerCase();
+      const s=id&&(want.includes(id)||id.includes(want))?Math.min(id.length,want.length)/Math.max(id.length,want.length):0;if(s>score){score=s;best=i}});
+      if(best>=0&&score>=.6)pick(best)}}}
+
+// keyboard
+const visibleIdx=()=>items.filter(it=>!it.row.hidden).map(it=>it.i);
+const help=$('#help');$('#helpBtn').onclick=()=>help.hidden=false;$('#helpClose').onclick=()=>help.hidden=true;help.onclick=ev=>{if(ev.target===help)help.hidden=true};
 document.addEventListener('keydown',ev=>{
-  if(ev.target.tagName==='INPUT'&&ev.key!=='Escape')return;
-  const v=visible();const pos=v.indexOf(cur);
-  if(ev.key==='ArrowDown'||ev.key==='j'){ev.preventDefault();if(v.length)select(v[Math.min(v.length-1,pos+1)],true)}
-  else if(ev.key==='ArrowUp'||ev.key==='k'){ev.preventDefault();if(v.length)select(v[Math.max(0,pos-1)],true)}
+  if(ev.key==='Escape'){if(!$('#lightbox').hidden)$('#lightbox').hidden=true;else if(!help.hidden)help.hidden=true;else document.activeElement.blur();return}
+  if(!$('#lightbox').hidden){if(ev.key==='ArrowLeft')$('#lbprev').click();if(ev.key==='ArrowRight')$('#lbnext').click();return}
+  if(ev.target.tagName==='INPUT'||ev.ctrlKey||ev.metaKey||ev.altKey)return;
+  const v=visibleIdx(),pos=v.indexOf(cur);
+  if(ev.key==='ArrowDown'||ev.key==='j'){ev.preventDefault();if(v.length)select(v[pos<0?0:Math.min(v.length-1,pos+1)])}
+  else if(ev.key==='ArrowUp'||ev.key==='k'){ev.preventDefault();if(v.length)select(v[pos<0?0:Math.max(0,pos-1)])}
   else if(ev.key==='/'){ev.preventDefault();$('#q').focus()}
-  else if(ev.key==='e'){const n=v.find(i=>i>cur&&items[i].e.kind==='error');if(n!==undefined)select(n,true)}
-  else if(ev.key==='Escape')document.activeElement.blur();
-});
-const first=items.findIndex(x=>x.e.kind==='error');
-if(items.length)select(first>=0?first:0,true);
+  else if(ev.key==='e'){const n=items.find(it=>it.i>cur&&it.e.kind==='error')||items.find(it=>it.e.kind==='error');if(n)select(n.i)}
+  else if(ev.key==='t')toggleTheme();
+  else if(ev.key==='?')help.hidden=false;
+  else if(/^[1-5]$/.test(ev.key)&&cur>=0){tab=tabs[+ev.key-1].dataset.tab;store.set('tab',tab);renderTab()}});
+
+// initial selection: #seq in the URL, else the first failure, else the first step
+applyFilter();
+const fromHash=items.find(it=>'#'+it.e.seq===location.hash);
+const firstErr=items.find(it=>it.e.kind==='error');
+if(items.length)select((fromHash||firstErr||items[0]).i);
+addEventListener('hashchange',()=>{const it=items.find(x=>'#'+x.e.seq===location.hash);if(it&&it.i!==cur)select(it.i)});
+})();
 </script></body></html>
