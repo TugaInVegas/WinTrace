@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0
+
+### Changed
+- Traces are written to `TestResults/WinTrace` by default. Pass `outputDir` to
+  `TraceSession` to choose another folder.
+
+### Added
+- New viewer: tabs (Screenshots, Details, UI tree, Logs, Trace info), failure banner, timeline with time
+  scale and screenshot preview, collapsible groups, duration bars, light/dark theme toggle, keyboard help,
+  links to a step (`report.html#7`).
+- UI tree locator picker: hover the screenshot to highlight elements, click to pick one and copy
+  ready-made locators. A failed find preselects the closest matching element.
+- Screenshot lightbox; the video plays next to the screenshots and keeps its position between steps.
+- Documentation in `docs/`: getting started (MSTest, NUnit, xUnit, CI), viewer, configuration, adapters,
+  trace format, troubleshooting.
+
+### Fixed
+- Clicking a screenshot did nothing in Chrome (it opened a blocked `data:` URL).
+
 ## 0.2.0
 
 ### Breaking
