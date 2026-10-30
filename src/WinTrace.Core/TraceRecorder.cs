@@ -76,6 +76,29 @@ namespace WinTrace
             }
         }
 
+        /// <summary>
+        /// Merge a Playwright trace (the zip from <c>context.Tracing.StopAsync(new() { Path = ... })</c>) into this one:
+        /// its actions, browser console errors and failed requests join the timeline as web events, interleaved with the
+        /// desktop steps by time, and the original zip is kept so it opens in Playwright's trace viewer with DOM
+        /// snapshots, network and console. Call it after tracing stopped and before the trace is saved. Never throws
+        /// for an unreadable file: the problem is logged in the trace.
+        /// </summary>
+        public void ImportPlaywrightTrace(string path)
+        {
+            lock (_gate)
+            {
+                try
+                {
+                    PlaywrightTrace.Merge(_meta, _events, _resources, path, _options.RedactParams);
+                    if (_events.Count > 0) _seq = Math.Max(_seq, _events.Max(e => e.Seq));
+                }
+                catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException || ex is JsonException)
+                {
+                    Log($"Playwright trace not imported ({Path.GetFileName(path)}): {ex.Message}");
+                }
+            }
+        }
+
         /// <summary>Record the test outcome (done by <see cref="TraceSession.Finish(bool, Action{string}, string)"/>).</summary>
         public void SetOutcome(bool failed, string? failureMessage = null)
         {
@@ -273,32 +296,8 @@ namespace WinTrace
             lock (_gate)
             {
                 _meta.Stopped = DateTimeOffset.UtcNow;
-                var dir = Path.GetDirectoryName(Path.GetFullPath(path));
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                using (var fs = File.Create(path))
-                using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
-                {
-                    Write(zip, "trace.json", JsonSerializer.Serialize(_meta, Json));
-                    var sb = new StringBuilder();
-                    foreach (var e in _events.OrderBy(e => e.Seq)) sb.Append(JsonSerializer.Serialize(e, Json)).Append('\n');
-                    Write(zip, "events.ndjson", sb.ToString());
-                    foreach (var kv in _resources)
-                    {
-                        // Images are already compressed; deflating them again only costs time.
-                        var image = kv.Key.EndsWith(".png") || kv.Key.EndsWith(".jpg");
-                        var entry = zip.CreateEntry(kv.Key, image ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
-                        using (var s = entry.Open()) s.Write(kv.Value, 0, kv.Value.Length);
-                    }
-                    foreach (var kv in _videoFiles.Where(v => File.Exists(v.Value)))
-                    {
-                        var entry = zip.CreateEntry(kv.Key, CompressionLevel.NoCompression);
-                        using (var s = entry.Open())
-                        using (var f = new FileStream(kv.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                            f.CopyTo(s);
-                    }
-                }
+                return TraceArchive.Write(path, _meta, _events, _resources, _videoFiles);
             }
-            return path;
         }
 
         /// <summary>
@@ -307,8 +306,11 @@ namespace WinTrace
         /// </summary>
         public string SaveHtml(string path, bool embedVideo = true) => ExportHtml(path, embedVideo)[0];
 
-        /// <summary>Like <see cref="SaveHtml"/>, returning every file written (the HTML first, then any video copied next to it).</summary>
-        public IReadOnlyList<string> ExportHtml(string path, bool embedVideo = true)
+        /// <summary>
+        /// Like <see cref="SaveHtml"/>, choosing separately whether videos and Playwright traces are embedded; returns every
+        /// file written (the HTML first, then anything copied next to it).
+        /// </summary>
+        public IReadOnlyList<string> ExportHtml(string path, bool embedVideo, bool embedPlaywrightTraces)
         {
             TraceMetadata meta;
             Dictionary<string, string> videos;
@@ -319,14 +321,11 @@ namespace WinTrace
                 videos = new Dictionary<string, string>(_videoFiles);
             }
             return TraceHtmlExporter.Export(path, meta, Events, id => { lock (_gate) return _resources.TryGetValue(id, out var b) ? b : null; },
-                videos, embedVideo);
+                videos, embedVideo, embedPlaywrightTraces);
         }
 
-        static void Write(ZipArchive zip, string name, string text)
-        {
-            var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
-            using (var w = new StreamWriter(entry.Open(), new UTF8Encoding(false))) w.Write(text);
-        }
+        /// <summary>Like <see cref="SaveHtml"/>, returning every file written (the HTML first, then any video copied next to it).</summary>
+        public IReadOnlyList<string> ExportHtml(string path, bool embedVideo = true) => ExportHtml(path, embedVideo, true);
 
         sealed class CapturedFailure
         {

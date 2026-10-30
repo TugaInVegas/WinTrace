@@ -50,6 +50,8 @@ namespace WinTrace
                 sb.Append("Step #").Append(step.Seq).Append(" **").Append(step.Name).Append("**");
                 if (step.Target != null) sb.Append(" `").Append(step.Target).Append('`');
                 if (step.Group != null) sb.Append(" (group: ").Append(step.Group).Append(')');
+                if (step.Origin == "web") sb.Append(" [web, Playwright]");
+                if (step.Location != null) sb.Append(", called from `").Append(step.Location).Append('`');
                 sb.Append(", ").Append(Off(step)).AppendLine().AppendLine();
                 if (step.Error != null) sb.Append("Error: `").Append(step.Error.Replace("`", "'")).AppendLine("`").AppendLine();
 
@@ -90,10 +92,13 @@ namespace WinTrace
                 var target = e.Error != null ? (e.Target != null ? e.Target + " — " : "") + (e.CauseSeq is int cs ? $"(failed in #{cs}) " : "") + e.Error : e.Target;
                 sb.Append("| ").Append(e.Seq).Append(" | ").Append(status).Append(" | ").Append(Off(e)).Append(" | ")
                   .Append(e.Kind == "log" ? "" : Secs(e.DurationMs)).Append(" | ").Append(Cell(e.Group)).Append(" | ")
-                  .Append(Cell(e.Name)).Append(" | ").Append(Cell(target)).AppendLine(" |");
+                  .Append(e.Origin == "web" ? "[web] " : "").Append(Cell(e.Name)).Append(" | ").Append(Cell(target)).AppendLine(" |");
             }
             if (events.Count > 300) sb.Append("\n... ").Append(events.Count - 300).AppendLine(" more events in the trace.");
             sb.AppendLine();
+
+            if (meta.PlaywrightTraces.Count > 0)
+                sb.AppendLine("Web steps (`[web]`) come from the Playwright trace(s) stored in the zip under `playwright/`. For DOM snapshots, network and console, extract one and open it with `pwsh bin/<config>/<tfm>/playwright.ps1 show-trace <file>` or https://trace.playwright.dev.").AppendLine();
 
             if (traceFile != null)
                 sb.AppendLine("## Dig further").AppendLine().AppendLine("```")

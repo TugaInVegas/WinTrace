@@ -20,6 +20,7 @@ var session = new TraceSession(testName, source, outputDir: "TestResults/WinTrac
     WriteHtml = true,            // default: write the HTML report next to the zip
     EmbedVideoInHtml = true,     // default: the HTML is a single file, video included
     WriteMarkdown = true,        // default: also a .md report and the failure screenshot
+    EmbedPlaywrightTracesInHtml = true,  // default: merged Playwright traces go inside the HTML
     SaveRecoveredErrors = false  // default: a passed test is not saved just because a step threw and was recovered
 };
 ```

@@ -21,6 +21,9 @@ Facts an agent needs:
   `wintrace summary <zip|folder> [--json]`, `wintrace inspect <zip|folder> [--step N] [--tree] [--extract <dir> [--all]] [--markdown] [--json]`.
 - Locators for new tests come from the running app: `wintrace snapshot --window "<title>" [--find <text>] [--json]`
   (WinAppDriver; Appium 2 / NovaWindows: `--url ... --automation-name NovaWindows`). Never guess locators.
+- Playwright: `session.Recorder.ImportPlaywrightTrace(path)` after `Tracing.StopAsync(new() { Path = path })` merges web
+  steps (`[web]`, with call log and test line) into the same timeline and keeps the original for Playwright's viewer;
+  `wintrace merge <wintrace.zip> <playwright.zip>` or `wintrace merge <playwright.zip>` afterwards.
 - Claude Code skills: integrations/claude-code/skills (debug-ui-test, write-ui-test).
 
 ## Docs
@@ -28,6 +31,7 @@ Facts an agent needs:
 - [Integration guide for AI agents](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/ai-agents.md): step-by-step recipe to add WinTrace to a test project, and how to debug failures from traces.
 - [Getting started](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/getting-started.md): MSTest, NUnit, xUnit setup and CI publishing.
 - [Configuration](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/configuration.md): TraceOptions, TraceSession, video, performance, privacy.
+- [Combining with Playwright](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/playwright.md): one timeline for web + desktop tests.
 - [API stability](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/stability.md): what will not change before 1.0.
 - [Trace format](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/trace-format.md): contents of trace.zip.
 - [Troubleshooting](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/troubleshooting.md)

@@ -3,10 +3,10 @@
 <title>WinTrace</title>
 <style>
 :root{--bg:#ffffff;--panel:#f6f7f9;--fg:#1d1f23;--mut:#646a73;--line:#dfe2e7;--sel:#e7effd;--hover:#f0f3f8;
-  --acc:#1a64d6;--err:#c62828;--err-bg:#fdecea;--warn:#a85d00;--warn-bg:#fff4e0;--ok:#2e7d32;--log:#8a9099;--hit:#fbc02d66;--box:#1a64d6;--pick:#e65100;
+  --acc:#1a64d6;--err:#c62828;--err-bg:#fdecea;--warn:#a85d00;--warn-bg:#fff4e0;--web:#7b1fa2;--ok:#2e7d32;--log:#8a9099;--hit:#fbc02d66;--box:#1a64d6;--pick:#e65100;
   --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17181b;--panel:#1f2125;--fg:#eceef1;--mut:#9aa0a8;
-  --line:#33363c;--sel:#22314a;--hover:#262a31;--acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--warn:#ffb74d;--warn-bg:#3a2e1c;--ok:#6cc070;--log:#80868f;
+  --line:#33363c;--sel:#22314a;--hover:#262a31;--acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--warn:#ffb74d;--warn-bg:#3a2e1c;--web:#ce93d8;--ok:#6cc070;--log:#80868f;
   --hit:#fbc02d44;--box:#7fb0ff;--pick:#ffab40;color-scheme:dark}}
 :root[data-theme=dark]{--bg:#17181b;--panel:#1f2125;--fg:#eceef1;--mut:#9aa0a8;--line:#33363c;--sel:#22314a;--hover:#262a31;
   --acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--ok:#6cc070;--log:#80868f;--hit:#fbc02d44;--box:#7fb0ff;--pick:#ffab40;color-scheme:dark}
@@ -35,6 +35,11 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 #tl .seg{position:absolute;top:5px;bottom:5px;min-width:3px;background:var(--ok);border-radius:2px;opacity:.8}
 #tl .seg.error{background:var(--err);opacity:1}#tl .seg.recovered{background:var(--warn)}#tl .seg.log{background:var(--log);top:12px;bottom:12px;width:2px!important;min-width:2px}
 #tl .seg.on{outline:2px solid var(--acc);outline-offset:1px;opacity:1}#tl .seg.dim{opacity:.15}
+#tl.mixed{height:40px}#tl.mixed .seg{top:4px;bottom:22px}#tl.mixed .seg.web{top:22px;bottom:4px}#tl.mixed .seg.log{top:9px;bottom:27px}#tl.mixed .seg.web.log{top:27px;bottom:9px}
+#tl .lane{position:absolute;left:6px;font-size:10px;color:var(--mut);pointer-events:none;z-index:1}
+.org{font-size:10px;font-weight:600;letter-spacing:.04em;border-radius:3px;padding:0 4px;margin-right:6px;border:1px solid var(--line);color:var(--mut);vertical-align:1px}.org.web{color:var(--web);border-color:var(--web)}
+.pwbox{margin-top:10px;padding:8px 10px;border:1px solid var(--web);border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pwlist{display:flex;flex-direction:column;gap:10px}.pwlist .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pwlist code{word-break:break-all}.pwlist a{color:inherit;text-decoration:none}
 #cursor{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none;z-index:2}
 #tip{position:absolute;z-index:20;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 6px 24px #0003;pointer-events:none;max-width:280px;font-size:12px}
 #tip img{display:block;max-width:260px;max-height:150px;margin-top:6px;border:1px solid var(--line)}
@@ -101,6 +106,7 @@ kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2 8h20" stroke="currentColor" stroke-width="2"/><path d="M6 15l3-3 3 3 4-4 2 2" fill="none" stroke="#1a64d6" stroke-width="2"/></svg><h1 id="title">WinTrace</h1></div>
  <div class="chips" id="chips"></div><div class="spacer"></div>
  <button class="icon" id="themeBtn" title="Toggle light/dark theme" aria-label="Toggle theme"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
+ <button id="pwBtn" hidden title="Open the Playwright trace with DOM snapshots, network and console">Playwright trace</button>
  <button class="icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
 </header>
 <div id="banner" hidden role="button" tabindex="0"></div>
@@ -124,6 +130,10 @@ kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
  </main>
 </div>
 <div class="overlay" id="lightbox" hidden><img id="lbimg" alt=""><div class="lbbar"><button id="lbprev" aria-label="Previous">←</button><span id="lbcap"></span><button id="lbnext" aria-label="Next">→</button><button id="lbclose">Close (Esc)</button></div></div>
+<div class="overlay" id="pw" hidden><div class="dialog" role="dialog" aria-label="Playwright trace" style="max-width:620px"><h2>Playwright trace</h2>
+ <p class="mut" style="margin-top:0">The web steps here come from a Playwright trace, kept whole. Open it in Playwright's trace viewer for DOM
+ snapshots, network requests, console and source.</p><div class="pwlist" id="pwlist"></div>
+ <p style="text-align:right;margin:12px 0 0"><button id="pwClose">Close</button></p></div></div>
 <div class="overlay" id="help" hidden><div class="dialog" role="dialog" aria-label="Keyboard shortcuts"><h2>Keyboard shortcuts</h2><table>
  <tr><td><kbd>↓</kbd> <kbd>j</kbd> / <kbd>↑</kbd> <kbd>k</kbd></td><td>Next / previous step</td></tr>
  <tr><td><kbd>e</kbd></td><td>Next error</td></tr><tr><td><kbd>/</kbd></td><td>Filter steps</td></tr>
@@ -155,6 +165,10 @@ const off=e=>Date.parse(e.start)-t0;
 const total=Math.max(1,...EV.map(e=>off(e)+(e.durationMs||0)));
 const maxDur=Math.max(1,...EV.filter(e=>e.kind!=='log').map(e=>e.durationMs||0));
 const errors=EV.filter(e=>e.kind==='error');
+// Web events come from Playwright traces merged into this one; show origins only when both kinds are present.
+const isWeb=e=>e.origin==='web';
+const mixed=EV.some(isWeb)&&EV.some(e=>!isWeb(e));
+const pwTraces=(D.meta.playwrightTraces||[]).filter(p=>p.src||(p.embedded&&R[p.embedded]));
 // Failures caused by a nested step's failure share its capture and are not counted twice.
 const rootErrors=errors.filter(e=>!e.causeSeq);
 // The outcome reported by the test framework wins; old traces fall back to "any step failed".
@@ -187,7 +201,8 @@ const tl=$('#tl'),tip=$('#tip');
 (function ticks(){const target=total/8,p=Math.pow(10,Math.floor(Math.log10(target)));const step=[1,2,5,10].map(m=>m*p).find(s=>s>=target)||p*10;
   let h='';for(let t=0;t<=total;t+=step)h+=`<span style="left:${t/total*100}%">${fmtMs(t).replace(' ','')}</span>`;$('#ticks').innerHTML=h})();
 const items=EV.map((e,i)=>({e,i}));
-items.forEach(it=>{const e=it.e,s=document.createElement('div');s.className='seg '+e.kind+(isRecovered(e)?' recovered':'');
+if(mixed){tl.classList.add('mixed');tl.insertAdjacentHTML('afterbegin','<span class="lane" style="top:1px">desktop</span><span class="lane" style="bottom:1px">web</span>')}
+items.forEach(it=>{const e=it.e,s=document.createElement('div');s.className='seg '+e.kind+(isRecovered(e)?' recovered':'')+(isWeb(e)?' web':'');
   s.style.left=(off(e)/total*100)+'%';s.style.width=Math.max(.3,(e.durationMs||0)/total*100)+'%';
   s.onclick=ev=>{ev.stopPropagation();select(it.i)};
   s.onmouseenter=()=>{const shot=R[e.screenshotAfter]||R[e.screenshotBefore];
@@ -209,15 +224,18 @@ items.forEach(it=>{const e=it.e;
       grpEl.dataset.g=e.group;const g=e.group;grpEl.onclick=()=>{closed.has(g)?closed.delete(g):closed.add(g);applyFilter()};list.appendChild(grpEl)}}
   const d=document.createElement('div');d.className='ev '+e.kind+(isRecovered(e)?' recovered':'');d.setAttribute('role','option');d.id='ev'+e.seq;
   const icon=e.kind==='error'?'✗':e.kind==='log'?'•':'✓';
-  d.innerHTML=`<span class="st">${icon}</span><span class="n">${esc(e.name)}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target||e.causeSeq?`<span class="t">${e.causeSeq?`↳ failed in #${e.causeSeq} `:''}${esc(e.target||'')}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
+  d.innerHTML=`<span class="st">${icon}</span><span class="n">${mixed?`<span class="org${isWeb(e)?' web':''}">${isWeb(e)?'WEB':'DESK'}</span>`:''}${esc(e.name)}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target||e.causeSeq?`<span class="t">${e.causeSeq?`↳ failed in #${e.causeSeq} `:''}${esc(e.target||'')}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
   d.onclick=()=>select(it.i);list.appendChild(d);it.row=d;it.grp=grpEl});
 
 let mode='all';
-const setMode=m=>{mode=m;[['fAll','all'],['fErr','err'],['fAct','act']].forEach(([id,v])=>$('#'+id).setAttribute('aria-pressed',m===v));applyFilter()};
-$('#fAll').onclick=()=>setMode('all');$('#fErr').onclick=()=>setMode('err');$('#fAct').onclick=()=>setMode('act');
+if(mixed)$('#fAct').insertAdjacentHTML('afterend','<button id="fDesk" aria-pressed="false">Desktop</button><button id="fWeb" aria-pressed="false">Web</button>');
+const modes=[['fAll','all'],['fErr','err'],['fAct','act'],['fDesk','desk'],['fWeb','web']];
+const setMode=m=>{mode=m;modes.forEach(([id,v])=>{const b=$('#'+id);if(b)b.setAttribute('aria-pressed',m===v)});applyFilter()};
+modes.forEach(([id,v])=>{const b=$('#'+id);if(b)b.onclick=()=>setMode(v)});
 function visibleRow(it){const e=it.e,q=$('#q').value.toLowerCase();
   const txt=(e.name+' '+(e.target||'')+' '+(e.error||'')+' '+(e.group||'')+' '+Object.values(e.params||{}).join(' ')).toLowerCase();
-  return (!q||txt.includes(q))&&(mode!=='err'||e.kind==='error')&&!(mode==='act'&&e.kind==='log')}
+  return (!q||txt.includes(q))&&(mode!=='err'||e.kind==='error')&&!(mode==='act'&&e.kind==='log')
+    &&(mode!=='web'||isWeb(e))&&(mode!=='desk'||!isWeb(e))}
 function applyFilter(){
   items.forEach(it=>{const ok=visibleRow(it);const hiddenByGroup=!!it.e.group&&[...closed].some(g=>it.e.group===g||it.e.group.startsWith(g+' / '));
     it.row.hidden=!ok||hiddenByGroup;it.match=ok;it.seg.classList.toggle('dim',!ok)});
@@ -238,9 +256,11 @@ function select(i){if(i<0||i>=items.length)return;
   const icon=isRecovered(e)?'<span style="color:var(--warn)">✗</span>':e.kind==='error'?'<span class="err">✗</span>':e.kind==='log'?'<span class="mut">•</span>':'<span style="color:var(--ok)">✓</span>';
   $('#stephead').innerHTML=`<h2>${icon} ${esc(e.name)} <span class="seq">#${e.seq}</span></h2>
     ${e.target?`<div class="target"><code>${esc(e.target)}</code><button id="cpTarget">Copy</button></div>`:''}
-    <div class="metaline">${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}${e.captureMs?`<span title="Screenshots and UI snapshot, not included in the duration">Capture ${fmtMs(e.captureMs)}${e.snapshotMs?` (UI tree ${fmtMs(e.snapshotMs)})`:''}</span>`:''}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
-    ${e.error?`<div class="errbox"${isRecovered(e)?' style="color:var(--warn);background:var(--warn-bg)"':''}>${isRecovered(e)?'Recovered: ':''}${esc(e.error)}${e.causeSeq?` <a href="#${e.causeSeq}">(failed in step #${e.causeSeq})</a>`:''}</div>`:''}`;
+    <div class="metaline">${isWeb(e)?'<span class="org web">WEB · Playwright</span>':''}${e.location?`<span title="Source location of the call">at ${esc(e.location)}</span>`:''}${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}${e.captureMs?`<span title="Screenshots and UI snapshot, not included in the duration">Capture ${fmtMs(e.captureMs)}${e.snapshotMs?` (UI tree ${fmtMs(e.snapshotMs)})`:''}</span>`:''}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
+    ${e.error?`<div class="errbox"${isRecovered(e)?' style="color:var(--warn);background:var(--warn-bg)"':''}>${isRecovered(e)?'Recovered: ':''}${esc(e.error)}${e.causeSeq?` <a href="#${e.causeSeq}">(failed in step #${e.causeSeq})</a>`:''}</div>`:''}
+    ${isWeb(e)&&pwTraces.length?`<div class="pwbox"><span>DOM snapshot, network and console for this browser step are in the Playwright trace.</span><button class="pwOpen">Open in Playwright Trace Viewer</button></div>`:''}`;
   copyBtn($('#cpTarget'),e.target);
+  $('#stephead').querySelectorAll('.pwOpen').forEach(b=>b.onclick=openPw);
   seekVideo(Date.parse(e.start));
   $('#cursor').style.left=(off(e)/total*100)+'%';
   history.replaceState(null,'','#'+e.seq);
@@ -300,10 +320,11 @@ $('#lbclose').onclick=()=>$('#lightbox').hidden=true;$('#lightbox').onclick=ev=>
 function detailsTab(e,body){const p=Object.entries(e.params||{});
   body.innerHTML=`<h3>Step</h3><table class="kv"><tr><td>Name</td><td>${esc(e.name)}</td></tr><tr><td>Kind</td><td>${esc(e.kind)}</td></tr>
     ${e.target?`<tr><td>Target</td><td class="mono">${esc(e.target)}</td></tr>`:''}${e.group?`<tr><td>Group</td><td>${esc(e.group)}</td></tr>`:''}
+    ${isWeb(e)?'<tr><td>Origin</td><td>Web (Playwright trace)</td></tr>':''}${e.location?`<tr><td>Called from</td><td class="mono">${esc(e.location)}</td></tr>`:''}
     <tr><td>Started</td><td>${esc(new Date(e.start).toLocaleString())} (+${fmtMs(off(e))})</td></tr>${e.kind!=='log'?`<tr><td>Duration</td><td>${fmtMs(e.durationMs||0)}</td></tr>`:''}</table>
     ${p.length?`<h3>Parameters</h3><table class="kv">${p.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`).join('')}</table>`:''}
     ${e.error?`<h3>Error</h3><div class="errbox">${esc(e.error)}</div>`:''}
-    ${e.errorDetail?`<h3>Stack trace</h3><pre>${esc(e.errorDetail)}</pre>`:''}`}
+    ${e.errorDetail?`<h3>${isWeb(e)?'Error, stack and call log':'Stack trace'}</h3><pre>${esc(e.errorDetail)}</pre>`:''}`}
 
 function logsTab(e,body){const logs=items.filter(it=>it.e.kind==='log');
   if(!logs.length){body.innerHTML='<p class="note">No log entries. Add some with rec.Log("message").</p>';return}
@@ -317,6 +338,7 @@ function infoTab(body){const m=D.meta;
     ${D.meta.failureMessage?`<tr><td>Failure message</td><td class="mono">${esc(D.meta.failureMessage)}</td></tr>`:''}
     <tr><td>Steps</td><td>${steps} (${rootErrors.length} with errors${!failed&&rootErrors.length?', recovered':''})</td></tr>
     <tr><td>Log entries</td><td>${EV.length-steps}</td></tr><tr><td>Machine</td><td>${esc(m.machine||'—')}</td></tr><tr><td>OS</td><td>${esc(m.os||'—')}</td></tr>
+    <tr><td>Playwright traces</td><td>${(D.meta.playwrightTraces||[]).length?D.meta.playwrightTraces.map(p=>`${esc(p.file)} (${p.actions} actions${p.playwrightVersion?', Playwright '+esc(p.playwrightVersion):''})`).join('<br>'):'—'}</td></tr>
     <tr><td>Video</td><td>${segs.length?segs.map(sg=>esc(sg.v.file)+(sg.v.embedded?' (embedded)':'')).join('<br>'):'—'}</td></tr><tr><td>Format version</td><td>${esc(m.formatVersion)}</td></tr></table>`}
 
 // UI tree with screenshot picker
@@ -332,6 +354,8 @@ function locators(n){const a=k=>n.getAttribute(k)||'',q=s=>s.replace(/\\/g,'\\\\
   if(attr)out.push([`By.XPath("//${n.tagName}[@${attr[0]}=${q(x(attr[1]))}]")`,'slow on WinAppDriver']);
   return out}
 function treeTab(e,body){const text=e.snapshot&&R[e.snapshot];
+  if(!text&&isWeb(e)){body.innerHTML=`<p class="note">This is a browser step. Its DOM snapshot (before, during and after the action), network requests and console are in the Playwright trace.</p>${pwTraces.length?'<p><button class="pwOpen">Open in Playwright Trace Viewer</button></p>':''}`;
+    body.querySelectorAll('.pwOpen').forEach(b=>b.onclick=openPw);return}
   if(!text&&e.causeSeq){body.innerHTML=`<p class="note">This step failed because step <a href="#${e.causeSeq}">#${e.causeSeq}</a> failed. The UI tree was captured there, once.</p>`;return}
   if(!text){body.innerHTML=`<p class="note">No UI snapshot for this step. By default WinTrace captures the UI tree only when a step fails, because it can be slow on WinAppDriver. Set <code>TraceOptions.Snapshots = SnapshotMode.Always</code> to capture it for every step.</p>`;return}
   const doc=e.snapshot.endsWith('.xml')?new DOMParser().parseFromString(text,'application/xml'):null;
@@ -388,9 +412,23 @@ function treeTab(e,body){const text=e.snapshot&&R[e.snapshot];
 
 // keyboard
 const visibleIdx=()=>items.filter(it=>!it.row.hidden).map(it=>it.i);
+// Playwright traces: download the original zip (embedded or next to the report) and open Playwright's trace viewer.
+const pwDlg=$('#pw');
+function pwBlobUrl(p){if(p.blobUrl)return p.blobUrl;if(p.embedded){const bin=atob(R[p.embedded]),a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
+  p.blobUrl=URL.createObjectURL(new Blob([a],{type:'application/zip'}))}else p.blobUrl=p.src;return p.blobUrl}
+function openPw(){
+  const name=p=>p.file.split('/').pop();
+  $('#pwlist').innerHTML=pwTraces.map((p,i)=>`<div><div class="row"><b>${esc(name(p))}</b><span class="mut">${p.actions} actions${p.playwrightVersion?' · Playwright '+esc(p.playwrightVersion):''}</span></div>
+    <div class="row" style="margin-top:6px"><a download="${esc(name(p))}" href="${esc(pwBlobUrl(p))}"><button tabindex="-1">1. Download trace</button></a>
+    <a href="https://trace.playwright.dev/" target="_blank" rel="noopener"><button tabindex="-1">2. Open trace.playwright.dev</button></a><span class="mut">and drop the file there (it stays in your browser)</span></div>
+    <div class="row" style="margin-top:6px"><span class="mut">Or locally:</span><code id="pwcmd${i}">pwsh bin/Debug/net8.0/playwright.ps1 show-trace "${esc(name(p))}"</code><button data-c="${i}">Copy</button></div></div>`).join('');
+  $('#pwlist').querySelectorAll('button[data-c]').forEach(b=>copyBtn(b,$('#pwcmd'+b.dataset.c).textContent));
+  pwDlg.hidden=false}
+if(pwTraces.length){$('#pwBtn').hidden=false;$('#pwBtn').onclick=openPw}
+$('#pwClose').onclick=()=>pwDlg.hidden=true;pwDlg.onclick=ev=>{if(ev.target===pwDlg)pwDlg.hidden=true};
 const help=$('#help');$('#helpBtn').onclick=()=>help.hidden=false;$('#helpClose').onclick=()=>help.hidden=true;help.onclick=ev=>{if(ev.target===help)help.hidden=true};
 document.addEventListener('keydown',ev=>{
-  if(ev.key==='Escape'){if(!$('#lightbox').hidden)$('#lightbox').hidden=true;else if(!help.hidden)help.hidden=true;else document.activeElement.blur();return}
+  if(ev.key==='Escape'){if(!$('#lightbox').hidden)$('#lightbox').hidden=true;else if(!help.hidden)help.hidden=true;else if(!pwDlg.hidden)pwDlg.hidden=true;else document.activeElement.blur();return}
   if(!$('#lightbox').hidden){if(ev.key==='ArrowLeft')$('#lbprev').click();if(ev.key==='ArrowRight')$('#lbnext').click();return}
   if(ev.target.tagName==='INPUT'||ev.ctrlKey||ev.metaKey||ev.altKey)return;
   const v=visibleIdx(),pos=v.indexOf(cur);

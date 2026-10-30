@@ -50,6 +50,18 @@ The viewer places steps on the video using its start time. With `TraceSession.St
 ffmpeg starts capturing. With `AttachVideo`, pass the exact instant your recorder started; a few hundred
 milliseconds of error shifts every step by the same amount.
 
+## "TraceOptions is an ambiguous reference"
+
+`System.Diagnostics` also has a `TraceOptions` type. In files with `using System.Diagnostics;`, write
+`new WinTrace.TraceOptions { ... }` or add `using TraceOptions = WinTrace.TraceOptions;`.
+
+## Web steps are missing after importing a Playwright trace
+
+- Import after `Tracing.StopAsync(new() { Path = ... })` returned, and before `Finish`.
+- Check the **Logs** tab for "Playwright trace not imported" and the reason.
+- Very new or very old Playwright versions may write a layout WinTrace does not fully read; the original trace is
+  still kept and opens in Playwright's viewer (header button **Playwright trace**).
+
 ## `wintrace snapshot` fails
 
 - "Could not reach the driver": start WinAppDriver (or the Appium server) and check `--url`

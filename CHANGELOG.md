@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+- Combine Playwright and WinTrace traces: `TraceRecorder.ImportPlaywrightTrace(path)` merges a Playwright trace's
+  actions (readable locator, values with passwords hidden, duration, error, call log, source line, screencast
+  screenshots), browser console errors/warnings and failed requests into the timeline as web steps. The original
+  Playwright trace is kept in the zip and the HTML ("Open in Playwright Trace Viewer").
+- `wintrace merge`: combine a WinTrace trace with Playwright traces after the fact, or turn Playwright-only traces into
+  WinTrace traces (zip, HTML and `.md`).
+- Viewer: desktop and web lanes on the timeline, WEB/DESK badges, Desktop/Web filters, source line of web steps,
+  Playwright trace dialog. `.md`, `summary`, `inspect` and `list` mark web steps.
+- `TraceSession.EmbedPlaywrightTracesInHtml`; `TraceEvent.Origin` and `Location`; `TraceMetadata.PlaywrightTraces`;
+  `TraceArchive.Write`; `TraceRecorder.ExportHtml(path, embedVideo, embedPlaywrightTraces)`.
+- [Combining with Playwright](docs/playwright.md) guide.
+
 ## 0.4.0
 
 Based on feedback from a real MSTest + WinAppDriver suite.

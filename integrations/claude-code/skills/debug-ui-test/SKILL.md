@@ -33,6 +33,7 @@ Work from the evidence in the trace before changing code. Do not re-run long UI 
 | `failed in nested step #N` | The failure happened inside a nested step | Read step #N: its error, stack trace and capture. |
 | No screenshots or UI tree | Driver session was gone | Check the previous step and whether the app crashed. |
 | Recovered errors in a passed test | Expected misses (probes, optional dialogs) | Usually nothing to fix. |
+| `[web]` step failed, or `console.error` / `HTTP 5xx` lines just before the failure | The web part (Playwright) failed or left bad state | Read the web step's call log and the browser lines; for DOM details open the Playwright trace from `playwright/` in the zip with `playwright.ps1 show-trace`. |
 
 Check a locator against the live app when it is running: `wintrace snapshot --window "<window title>" --find "<text>"`.
 
