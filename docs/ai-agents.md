@@ -73,8 +73,10 @@ public void FinishTrace() =>
 **xUnit** has no outcome API: set a `_passed = true` flag as the last line of each test and call
 `Trace.Finish(!_passed)` in `Dispose()`. See [getting started](getting-started.md#xunit).
 
-If the project already has a teardown that closes the driver, call `Finish` **before** closing it, so the
-last screenshot can still be taken.
+`Finish` only writes files (screenshots are taken during the steps), so it can run anywhere in the teardown,
+including after the driver is closed. Put it last, in a `finally`, after a Playwright trace was saved and imported
+(see [Playwright](playwright.md)) and after any external screen recorder stopped. The exception is
+`TraceSession.StartVideo`: `Finish` stops that recording itself.
 
 ### 4. Record steps
 
