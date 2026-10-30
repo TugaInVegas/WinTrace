@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
 namespace WinTrace
 {
     /// <summary>Records actions with before/after screenshots and UI snapshots into a trace.zip.</summary>
-    public sealed class TraceRecorder : IDisposable
+    public sealed class TraceRecorder
     {
         static readonly JsonSerializerOptions Json = new JsonSerializerOptions
         {
@@ -21,10 +22,11 @@ namespace WinTrace
         readonly TraceOptions _options;
         readonly ITraceSource? _source;
         readonly List<TraceEvent> _events = new List<TraceEvent>();
+        // Content-addressed: identical screenshots (common between consecutive steps) are stored once.
         readonly Dictionary<string, byte[]> _resources = new Dictionary<string, byte[]>();
         readonly TraceMetadata _meta;
         readonly Dictionary<string, string> _videoFiles = new Dictionary<string, string>();
-        string? _group;
+        readonly List<string> _groups = new List<string>();
         int _seq;
 
         public TraceRecorder(ITraceSource? source = null, TraceOptions? options = null)
@@ -41,7 +43,7 @@ namespace WinTrace
 
         public bool HasErrors { get { lock (_gate) return _events.Any(e => e.Kind == "error"); } }
 
-        public IReadOnlyList<TraceEvent> Events { get { lock (_gate) return _events.ToList(); } }
+        public IReadOnlyList<TraceEvent> Events { get { lock (_gate) return _events.OrderBy(e => e.Seq).ToList(); } }
 
         /// <summary>
         /// Attach a screen recording (e.g. from your own ffmpeg ScreenRecorder). <paramref name="startedAt"/>
@@ -57,28 +59,32 @@ namespace WinTrace
             }
         }
 
-        /// <summary>Label subsequent actions until the returned scope is disposed.</summary>
+        /// <summary>Label subsequent actions until the returned scope is disposed. Groups nest ("Login / Submit").</summary>
         public IDisposable Group(string name)
         {
-            lock (_gate) _group = name;
-            return new Scope(() => { lock (_gate) _group = null; });
+            lock (_gate) _groups.Add(name);
+            return new Scope(() => { lock (_gate) { var i = _groups.LastIndexOf(name); if (i >= 0) _groups.RemoveAt(i); } });
         }
 
         public void Log(string message)
         {
             lock (_gate)
-                _events.Add(new TraceEvent { Seq = ++_seq, Kind = "log", Name = message, Start = DateTimeOffset.UtcNow, Group = _group });
+                _events.Add(new TraceEvent { Seq = ++_seq, Kind = "log", Name = message, Start = DateTimeOffset.UtcNow, Group = CurrentGroup() });
         }
 
         /// <summary>Run <paramref name="body"/> as a traced step. Exceptions are recorded and rethrown.</summary>
         public T Step<T>(string name, string? target, Func<T> body, IDictionary<string, string>? parameters = null)
         {
             var ev = new TraceEvent { Name = name, Target = target, Start = DateTimeOffset.UtcNow };
-            lock (_gate) { ev.Seq = ++_seq; ev.Group = _group; }
+            lock (_gate) { ev.Seq = ++_seq; ev.Group = CurrentGroup(); }
             if (parameters != null)
-                foreach (var kv in parameters) ev.Params[kv.Key] = Redact(kv.Key, kv.Value);
+            {
+                var sensitiveTarget = IsSensitive(target);
+                foreach (var kv in parameters)
+                    ev.Params[kv.Key] = sensitiveTarget || IsSensitive(kv.Key) ? "***" : kv.Value;
+            }
 
-            ev.ScreenshotBefore = TryScreenshot(ev.Seq, "before");
+            if (_options.ScreenshotBefore) ev.ScreenshotBefore = TryScreenshot();
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
@@ -88,14 +94,15 @@ namespace WinTrace
             {
                 ev.Kind = "error";
                 ev.Error = ex.GetType().Name + ": " + ex.Message;
+                ev.ErrorDetail = ex.ToString();
                 throw;
             }
             finally
             {
                 sw.Stop();
                 ev.DurationMs = sw.Elapsed.TotalMilliseconds;
-                ev.ScreenshotAfter = TryScreenshot(ev.Seq, "after");
-                ev.Snapshot = TrySnapshot(ev.Seq, ev.Error != null);
+                ev.ScreenshotAfter = TryScreenshot();
+                ev.Snapshot = TrySnapshot(ev.Error != null);
                 lock (_gate) _events.Add(ev);
             }
         }
@@ -103,24 +110,23 @@ namespace WinTrace
         public void Step(string name, string? target, Action body, IDictionary<string, string>? parameters = null) =>
             Step<object?>(name, target, () => { body(); return null; }, parameters);
 
-        string Redact(string key, string value) =>
-            _options.RedactParams.Any(p => key.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) ? "***" : value;
+        string? CurrentGroup() => _groups.Count == 0 ? null : string.Join(" / ", _groups);
 
-        string? TryScreenshot(int seq, string phase)
+        bool IsSensitive(string? text) =>
+            text != null && _options.RedactParams.Any(p => text.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0);
+
+        string? TryScreenshot()
         {
             if (!_options.Screenshots || _source == null) return null;
             try
             {
                 var png = _source.CaptureScreenshot();
-                if (png == null) return null;
-                var path = $"resources/{seq:D4}-{phase}.png";
-                lock (_gate) _resources[path] = png;
-                return path;
+                return png == null ? null : AddResource("resources", ".png", png);
             }
             catch (Exception ex) { Log("screenshot failed: " + ex.Message); return null; }
         }
 
-        string? TrySnapshot(int seq, bool failed)
+        string? TrySnapshot(bool failed)
         {
             var mode = _options.Snapshots;
             if (_source == null || mode == SnapshotMode.Off || (mode == SnapshotMode.OnError && !failed)) return null;
@@ -128,14 +134,24 @@ namespace WinTrace
             {
                 var s = _source.CaptureSnapshot();
                 if (s == null) return null;
-                var path = $"snapshots/{seq:D4}.txt";
-                lock (_gate) _resources[path] = Encoding.UTF8.GetBytes(s);
-                return path;
+                var head = s.TrimStart();
+                var ext = head.StartsWith("<") ? ".xml" : head.StartsWith("{") || head.StartsWith("[") ? ".json" : ".txt";
+                return AddResource("snapshots", ext, Encoding.UTF8.GetBytes(s));
             }
             catch (Exception ex) { Log("snapshot failed: " + ex.Message); return null; }
         }
 
-        /// <summary>Write trace.zip (trace.json, events.ndjson, resources/, snapshots/).</summary>
+        string AddResource(string folder, string ext, byte[] data)
+        {
+            string hash;
+            using (var sha = SHA1.Create()) hash = BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").ToLowerInvariant();
+            var path = $"{folder}/{hash}{ext}";
+            lock (_gate)
+                if (!_resources.ContainsKey(path)) _resources[path] = data;
+            return path;
+        }
+
+        /// <summary>Write trace.zip (trace.json, events.ndjson, resources/, snapshots/, video/).</summary>
         public string Save(string path)
         {
             lock (_gate)
@@ -152,7 +168,8 @@ namespace WinTrace
                     Write(zip, "events.ndjson", sb.ToString());
                     foreach (var kv in _resources)
                     {
-                        var entry = zip.CreateEntry(kv.Key, CompressionLevel.Fastest);
+                        // PNG is already compressed; deflating it again only costs time.
+                        var entry = zip.CreateEntry(kv.Key, kv.Key.EndsWith(".png") ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
                         using (var s = entry.Open()) s.Write(kv.Value, 0, kv.Value.Length);
                     }
                     foreach (var kv in _videoFiles.Where(v => File.Exists(v.Value)))
@@ -170,8 +187,15 @@ namespace WinTrace
         /// <summary>Write a self-contained HTML report (no server, no dependencies).</summary>
         public string SaveHtml(string path)
         {
-            _meta.Stopped = DateTimeOffset.UtcNow;
-            return TraceHtmlExporter.Write(path, _meta, Events, id => { lock (_gate) return _resources.TryGetValue(id, out var b) ? b : null; }, new Dictionary<string, string>(_videoFiles));
+            TraceMetadata meta;
+            Dictionary<string, string> videos;
+            lock (_gate)
+            {
+                _meta.Stopped = DateTimeOffset.UtcNow;
+                meta = JsonSerializer.Deserialize<TraceMetadata>(JsonSerializer.Serialize(_meta, Json), Json)!;
+                videos = new Dictionary<string, string>(_videoFiles);
+            }
+            return TraceHtmlExporter.Write(path, meta, Events, id => { lock (_gate) return _resources.TryGetValue(id, out var b) ? b : null; }, videos);
         }
 
         static void Write(ZipArchive zip, string name, string text)
@@ -180,13 +204,11 @@ namespace WinTrace
             using (var w = new StreamWriter(entry.Open(), new UTF8Encoding(false))) w.Write(text);
         }
 
-        public void Dispose() { }
-
         sealed class Scope : IDisposable
         {
-            readonly Action _end;
+            Action? _end;
             public Scope(Action end) { _end = end; }
-            public void Dispose() => _end();
+            public void Dispose() { _end?.Invoke(); _end = null; }
         }
     }
 }
