@@ -1,5 +1,7 @@
 # WinTrace — notes for Claude sessions
 
+Read `AGENTS.md` first (layout, commands, rules). This file adds the release and commit rules for the owner's sessions.
+
 Playwright-style traces for Windows desktop UI automation (WinAppDriver, NovaWindowsDriver, any test
 framework). Keep `WinTrace.Appium` driver-agnostic (`IWebDriver` only) and keep UIA snapshots
 opt-in/on-error (WinAppDriver `PageSource` can take tens of seconds on large apps).
