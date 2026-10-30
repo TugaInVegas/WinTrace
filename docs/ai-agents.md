@@ -85,6 +85,10 @@ Nothing is recorded until code calls the recorder. Prefer few, high-value edits:
 2. **Page-object methods** that represent a user action: wrap the body in `Trace.Recorder.Step(...)`.
 3. **Direct calls** in tests: `Trace.Recorder.Click(Trace.Recorder.Find(Driver, by))`.
 4. Use `using (Trace.Recorder.Group("Login")) { ... }` around logical phases.
+5. **Drop-in replacements** where wrapping is awkward: `element.ClickTraced()`, `SendKeysTraced(...)`,
+   `driver.FindElementTraced(by)` (record on the running test's trace, plain calls otherwise).
+6. **Frequent probes and polling waits** (expected to miss sometimes): `Step(..., Capture.None, ...)` or
+   `Log("...")`, so a miss does not take screenshots and a UI tree.
 
 Pass values typed into password fields through `SendKeys(element, text, sensitive: true)` or a step whose
 target contains "password"; WinTrace then stores `***`.
@@ -94,6 +98,7 @@ target contains "password"; WinTrace then stores `***`.
 - Do **not** set `Snapshots = SnapshotMode.Always` on WinAppDriver projects unless the user asks: it can add
   tens of seconds per step.
 - Do **not** catch or swallow exceptions to record them; `Step` records and rethrows by itself.
+- Call `Finish` with the real outcome from the test framework; it drives the passed/failed status of the trace.
 - Do **not** change test outcomes, retries or timeouts as part of the integration.
 - Add the output folder (`TestResults/`) to `.gitignore` if it is not ignored already.
 - Keep the integration in one commit that the user can review: package reference, setup/teardown, wrapped helpers.
@@ -115,9 +120,9 @@ Install the CLI once: `dotnet tool install -g WinTrace.Cli`.
 
 ```
 wintrace summary <trace.zip>               # every step, FAIL marks, exit code 1 if any failed
-wintrace inspect <trace.zip>               # the first failed step in detail
+wintrace inspect <trace.zip>               # the step where the test failed, in detail
 wintrace inspect <trace.zip> --tree        # ... plus the UI tree as indented text
-wintrace inspect <trace.zip> --extract out # ... and save before/after screenshots as PNG
+wintrace inspect <trace.zip> --extract out # ... and save its screenshots (add --all for every step)
 wintrace inspect <trace.zip> --step 4      # any other step
 ```
 
@@ -132,6 +137,8 @@ How to read the result:
 | `similarElements` with a high score (≥ 80%) | Typo or renamed AutomationId/Name | Use the suggested locator. |
 | No similar elements, but a UI tree | Element not there yet, or in another window | Add an explicit wait; attach to the right window. |
 | No UI tree and no screenshots | Driver session was gone | Look at the step before; check the app did not crash. |
+| "The test failed outside the recorded steps" | An assertion or code outside any step failed | Read the failure message; the last recorded step shows the state before it. |
+| `Cause: failed in nested step #N` | The failure happened inside a nested step | Read step #N: its stack trace and capture are shown. |
 | Error on a step that passed before | App state differs (dialog, focus, data) | Look at the before/after screenshots of the previous steps. |
 
 Prefer `MobileBy.AccessibilityId` locators over XPath: XPath is slow on WinAppDriver.

@@ -16,8 +16,15 @@ namespace WinTrace.Appium
         /// <summary>Lazy driver lookup, so sessions that are recreated or attached later are still traced.</summary>
         public AppiumTraceSource(Func<IWebDriver?> driver) { _driver = driver; }
 
-        public byte[]? CaptureScreenshot() =>
-            _driver() is ITakesScreenshot t ? t.GetScreenshot().AsByteArray : null;
+        /// <summary>Optional: store smaller screenshots (JPEG and/or a maximum width). Null keeps the driver's PNG.</summary>
+        public ScreenshotCompression? Compression { get; set; }
+
+        public byte[]? CaptureScreenshot()
+        {
+            if (!(_driver() is ITakesScreenshot t)) return null;
+            var png = t.GetScreenshot().AsByteArray;
+            return Compression == null ? png : Compression.Apply(png);
+        }
 
         public string? CaptureSnapshot() => _driver()?.PageSource;
     }

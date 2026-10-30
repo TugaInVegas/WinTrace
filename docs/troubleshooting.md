@@ -2,7 +2,9 @@
 
 ## Tests got much slower
 
-Usually UI tree snapshots. Check that `TraceOptions.Snapshots` is `OnError` (the default) and not `Always`.
+Usually UI tree snapshots. Check that `TraceOptions.Snapshots` is `OnError` (the default) and not `Always`, and
+use `Capture.None` for probes that are expected to miss (each failed probe would otherwise take a UI tree).
+`wintrace inspect` and the viewer show the capture time of each step.
 On WinAppDriver a snapshot of a large WPF tree can take tens of seconds. Then see
 [Performance](configuration.md#performance) for screenshots and labels.
 
@@ -35,6 +37,13 @@ If the screenshot is larger than the root element, the viewer assumes it is the 
 pixels. Display scaling (DPI above 100%) can still shift boxes when the driver reports logical pixels and
 the screenshot is in physical pixels.
 
+## Video does not play or stays at 0:00
+
+- Report written with `EmbedVideoInHtml = false`: the `<name>_files/` folder must sit next to the HTML. Archive
+  and attach them together, or keep the default (embedded).
+- Served over HTTP: the viewer downloads the whole video when the server does not support range requests, which
+  can take a moment for long recordings.
+
 ## Video is out of sync
 
 The viewer places steps on the video using its start time. With `TraceSession.StartVideo` this is taken when
@@ -47,7 +56,22 @@ milliseconds of error shifts every step by the same amount.
 `_trace.StartVideo(@"C:\tools\ffmpeg\bin\ffmpeg.exe")`. The built-in recorder uses `gdigrab`, which needs
 an interactive desktop session (not a service account without a desktop).
 
-## The HTML file is large
+## The trace or HTML file is large
 
-Screenshots are embedded in the HTML so it works offline. Identical screenshots are stored once. To shrink
-it, set `ScreenshotBefore = false` or wrap several driver calls in one step.
+Screenshots (and the video, by default) are embedded in the HTML so it works offline. Identical screenshots are
+stored once. To shrink traces:
+
+- `AppiumTraceSource.Compression = ScreenshotCompression.ToJpeg(80, 1600)` or `ScaleDown(1600)` on high-resolution screens;
+- `ScreenshotBefore = false`, or wrap several driver calls in one step;
+- `Capture.None` for frequent probes;
+- `EmbedVideoInHtml = false` for long recordings (the video stays in the zip and next to the HTML).
+
+## A failed probe saved the trace of a passed test
+
+Since 0.4.0 the outcome passed to `Finish` decides: steps that threw in a passed test are *recovered errors* and do
+not save the trace unless `SaveRecoveredErrors = true`. Use `Capture.None` for probes that are expected to miss.
+
+## The test failed but the viewer shows no failed step
+
+The test failed outside any recorded step (for example in an assertion). The banner says so and shows the
+failure message when you pass it: `Finish(testFailed, attach, failureMessage)`.
