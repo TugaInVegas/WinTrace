@@ -44,6 +44,11 @@ namespace WinTrace
         /// </summary>
         public bool EmbedVideoInHtml { get; set; } = true;
         /// <summary>
+        /// Put Playwright traces merged with <see cref="TraceRecorder.ImportPlaywrightTrace"/> inside the HTML report
+        /// (default true), so its "Open in Playwright Trace Viewer" button works from the single file.
+        /// </summary>
+        public bool EmbedPlaywrightTracesInHtml { get; set; } = true;
+        /// <summary>
         /// Also write a Markdown summary (<c>.md</c>) and the screenshot taken at the failure next to the zip (default
         /// true). Text and images are what people skimming CI output and AI agents read most easily.
         /// </summary>
@@ -89,7 +94,7 @@ namespace WinTrace
                 var stem = Path.Combine(OutputDir, $"{_name}_{DateTime.Now:yyyyMMdd_HHmmss}{(failed ? "_failed" : "")}");
                 var zip = Recorder.Save(stem + ".zip");
                 written.Add(zip);
-                if (WriteHtml) written.AddRange(Recorder.ExportHtml(stem + ".html", EmbedVideoInHtml));
+                if (WriteHtml) written.AddRange(Recorder.ExportHtml(stem + ".html", EmbedVideoInHtml, EmbedPlaywrightTracesInHtml));
                 if (WriteMarkdown) written.AddRange(WriteReport(stem, zip, WriteHtml ? stem + ".html" : null));
                 foreach (var f in written) attach?.Invoke(f);
             }

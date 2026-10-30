@@ -29,6 +29,10 @@ namespace WinTrace
         public double? CaptureMs { get; set; }
         /// <summary>Part of <see cref="CaptureMs"/> spent on the UI snapshot.</summary>
         public double? SnapshotMs { get; set; }
+        /// <summary>Where the event comes from: null for WinTrace steps, "web" for events imported from a Playwright trace.</summary>
+        public string? Origin { get; set; }
+        /// <summary>Source location that issued the call when known (e.g. "LoginTests.cs:42"), from Playwright stacks.</summary>
+        public string? Location { get; set; }
     }
 
     /// <summary>What to capture for one step, overriding <see cref="TraceOptions"/>.</summary>
@@ -58,6 +62,20 @@ namespace WinTrace
         public string? Embedded { get; set; }
     }
 
+    public sealed class PlaywrightTraceRef
+    {
+        /// <summary>Path inside trace.zip, e.g. playwright/Login_failed.zip.</summary>
+        public string File { get; set; } = "";
+        /// <summary>Playwright version that wrote it, when known.</summary>
+        public string? PlaywrightVersion { get; set; }
+        /// <summary>Number of web actions imported from it.</summary>
+        public int Actions { get; set; }
+        /// <summary>Key of the embedded copy in the HTML report's resources (set on export).</summary>
+        public string? Embedded { get; set; }
+        /// <summary>Relative URL of the copy next to the HTML report when not embedded (set on export).</summary>
+        public string? Src { get; set; }
+    }
+
     public sealed class TraceMetadata
     {
         public int FormatVersion { get; set; } = 1;
@@ -70,6 +88,8 @@ namespace WinTrace
         /// <summary>Failure message reported with the outcome, if any.</summary>
         public string? FailureMessage { get; set; }
         public List<TraceVideo> Videos { get; set; } = new List<TraceVideo>();
+        /// <summary>Original Playwright traces merged into this one, kept whole so they open in Playwright's own viewer.</summary>
+        public List<PlaywrightTraceRef> PlaywrightTraces { get; set; } = new List<PlaywrightTraceRef>();
         public string Machine { get; set; } = Environment.MachineName;
         public string Os { get; set; } = Environment.OSVersion.ToString();
     }

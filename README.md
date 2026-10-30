@@ -66,6 +66,14 @@ public class CustomerFormTests
 A failing run writes `TestResults/WinTrace/<test>_<time>_failed.zip` and a `.html` next to it. Open the
 HTML in any browser.
 
+## Web + desktop in one trace
+
+Tests that use Playwright for a web app and WinAppDriver for a desktop app can merge the Playwright trace into the
+WinTrace one: one timeline with web and desktop steps, browser console errors and failed requests, and the original
+Playwright trace kept whole to open in Playwright's viewer (DOM snapshots, network, console).
+`_trace.Recorder.ImportPlaywrightTrace(path)` in the test, or `wintrace merge` afterwards.
+See [Combining with Playwright](https://github.com/TugaInVegas/WinTrace/blob/main/docs/playwright.md).
+
 ## Using an AI coding agent?
 
 WinTrace is built to be added and used by coding agents (Claude Code, Copilot, Cursor, Codex...). Ask yours:
@@ -91,6 +99,7 @@ What agents get:
 | [Getting started](https://github.com/TugaInVegas/WinTrace/blob/main/docs/getting-started.md) | MSTest, NUnit and xUnit setup; page objects; publishing traces from Azure DevOps and GitHub Actions |
 | [Using the viewer](https://github.com/TugaInVegas/WinTrace/blob/main/docs/viewer.md) | Timeline, tabs, UI tree picker, keyboard shortcuts, sharing links |
 | [Configuration](https://github.com/TugaInVegas/WinTrace/blob/main/docs/configuration.md) | `TraceOptions`, `TraceSession`, video, privacy and performance tuning |
+| [Combining with Playwright](https://github.com/TugaInVegas/WinTrace/blob/main/docs/playwright.md) | Merge Playwright traces into WinTrace traces, keep the originals for Playwright's viewer |
 | [Writing an adapter](https://github.com/TugaInVegas/WinTrace/blob/main/docs/adapters.md) | Support another tool (e.g. FlaUI) in two methods |
 | [API stability](https://github.com/TugaInVegas/WinTrace/blob/main/docs/stability.md) | What will not change before 1.0, and how versions are numbered |
 | [Trace format](https://github.com/TugaInVegas/WinTrace/blob/main/docs/trace-format.md) | What is inside `trace.zip`, for tools that read it |

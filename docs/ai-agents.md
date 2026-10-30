@@ -156,6 +156,14 @@ How to read the result:
 
 Prefer `MobileBy.AccessibilityId` locators over XPath: XPath is slow on WinAppDriver.
 
+### Tests that also use Playwright
+
+When the project merges Playwright traces ([how](playwright.md)), web steps appear as `[web]` in the `.md`,
+`summary` and `inspect`, with the test line that issued them and Playwright's call log. Browser console errors and
+failed requests are on the same timeline, which often explains a later desktop failure. For DOM details, extract
+the original from `playwright/` in the zip and open it with `playwright.ps1 show-trace`. To get a Markdown report for
+a web-only test: `wintrace merge <playwright trace.zip>`.
+
 ## Writing new tests with real locators
 
 Do not guess locators. With the application running under WinAppDriver (or an Appium server with

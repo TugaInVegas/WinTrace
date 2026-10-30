@@ -10,10 +10,10 @@ namespace WinTrace
 {
     public static class TraceHtmlExporter
     {
-        /// <summary>Writes the HTML report and returns its path. See <see cref="Export"/>.</summary>
+        /// <summary>Writes the HTML report and returns its path. See <see cref="Export(string, TraceMetadata, IEnumerable{TraceEvent}, Func{string, byte[]}, IDictionary{string, string}, bool, bool)"/>.</summary>
         public static string Write(string path, TraceMetadata meta, IEnumerable<TraceEvent> events, Func<string, byte[]?> resource,
             IDictionary<string, string>? videoFiles = null, bool embedVideo = true) =>
-            Export(path, meta, events, resource, videoFiles, embedVideo)[0];
+            Export(path, meta, events, resource, videoFiles, embedVideo, true)[0];
 
         /// <summary>
         /// Writes the HTML report. With <paramref name="embedVideo"/> (default) videos go inside the HTML, so the one file
@@ -21,7 +21,16 @@ namespace WinTrace
         /// Returns every file written, the HTML first.
         /// </summary>
         public static IReadOnlyList<string> Export(string path, TraceMetadata meta, IEnumerable<TraceEvent> events, Func<string, byte[]?> resource,
-            IDictionary<string, string>? videoFiles = null, bool embedVideo = true)
+            IDictionary<string, string>? videoFiles = null, bool embedVideo = true) =>
+            Export(path, meta, events, resource, videoFiles, embedVideo, true);
+
+        /// <summary>
+        /// As <see cref="Export(string, TraceMetadata, IEnumerable{TraceEvent}, Func{string, byte[]}, IDictionary{string, string}, bool)"/>;
+        /// Playwright traces merged into the trace are embedded too (default) or copied next to the HTML, so the viewer can
+        /// hand them to Playwright's trace viewer.
+        /// </summary>
+        public static IReadOnlyList<string> Export(string path, TraceMetadata meta, IEnumerable<TraceEvent> events, Func<string, byte[]?> resource,
+            IDictionary<string, string>? videoFiles, bool embedVideo, bool embedPlaywrightTraces)
         {
             var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
             var evs = events.OrderBy(e => e.Seq).ToList();
@@ -56,6 +65,23 @@ namespace WinTrace
                 if (!string.Equals(Path.GetFullPath(src), Path.GetFullPath(dest), StringComparison.OrdinalIgnoreCase))
                     File.Copy(src, dest, true);
                 v.Src = Uri.EscapeUriString(stem + "_files/" + Path.GetFileName(v.File));
+                written.Add(dest);
+            }
+            foreach (var p in meta.PlaywrightTraces)
+            {
+                var bytes = resource(p.File);
+                if (bytes == null) continue;
+                if (embedPlaywrightTraces)
+                {
+                    res[p.File] = Convert.ToBase64String(bytes);
+                    p.Embedded = p.File;
+                    p.Src = null;
+                    continue;
+                }
+                Directory.CreateDirectory(filesDir);
+                var dest = Path.Combine(filesDir, Path.GetFileName(p.File));
+                File.WriteAllBytes(dest, bytes);
+                p.Src = Uri.EscapeUriString(stem + "_files/" + Path.GetFileName(p.File));
                 written.Add(dest);
             }
             var data = JsonSerializer.Serialize(new { meta, events = evs, resources = res }, opts)

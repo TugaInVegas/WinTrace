@@ -59,6 +59,12 @@ the locator that failed. A typo such as `btnSubmitt` points straight at `btnSubm
 The highlight assumes the screenshot shows the root element of the tree (the app window, or the whole
 desktop for a Root session). If boxes look shifted, see [Troubleshooting](troubleshooting.md#highlight-boxes-are-shifted).
 
+## Combined web and desktop traces
+
+When a Playwright trace was merged ([how](playwright.md)), the timeline has two lanes (desktop, web), steps carry a
+**WEB** or **DESK** badge, the filters add **Desktop** and **Web**, and web steps show the test line that issued them.
+The **Playwright trace** button opens the original in Playwright's trace viewer for DOM snapshots, network and console.
+
 ## Video
 
 The video is embedded in the HTML by default, so the file works on its own, also when opened from a CI test

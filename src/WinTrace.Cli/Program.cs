@@ -26,6 +26,10 @@ const string Usage = @"wintrace - inspect WinTrace traces and live Windows UI
   wintrace show <trace.zip|folder> [--out <file.html>] [--no-open]
       Build the HTML report and open it.
 
+  wintrace merge <trace.zip|playwright.zip> [<playwright.zip>...] [--out <file.zip>] [--title <title>]
+      Combine a WinTrace trace with Playwright traces (one timeline, originals kept for Playwright's viewer),
+      or turn Playwright traces alone into a WinTrace trace. Writes the zip, the HTML report and the .md.
+
   wintrace snapshot [--url <driver-url>] (--window <title> | --session <id> | --root) [--find <text>]
                     [--out <tree.xml>] [--screenshot <file.png>] [--automation-name <name>] [--json]
       The live UI tree of a window from WinAppDriver or an Appium server (NovaWindowsDriver), with a
@@ -61,6 +65,7 @@ string? Opt(string name) { var i = Array.IndexOf(args, name); return i >= 0 && i
 
 if (args[0] == "list") return List();
 if (args[0] == "snapshot") return Snapshot();
+if (args[0] == "merge") return Merge();
 if (args[0] is not ("show" or "summary" or "inspect")) { Console.Error.WriteLine(Usage); return 2; }
 if (args.Length < 2 || args[1].StartsWith("--")) { Console.Error.WriteLine("Give a trace file or a folder.\n\n" + Usage); return 2; }
 var zip = TraceFiles.Resolve(args[1], out var picked) ?? "";
@@ -151,10 +156,67 @@ int List()
         Console.WriteLine($"{(failed ? "FAIL" : "ok  ")}  {file.LastWriteTime:yyyy-MM-dd HH:mm}  {trace.Meta.Title}");
         if (failed)
             Console.WriteLine("      " + (outside ? "outside steps: " + (trace.Meta.FailureMessage ?? "(no message)")
-                : $"#{step?.Seq} {step?.Name} {step?.Target} — {step?.Error}"));
+                : $"#{step?.Seq} {(step?.Origin == "web" ? "[web] " : "")}{step?.Name} {step?.Target} — {step?.Error}"));
         Console.WriteLine("      " + file.FullName);
     }
     return 0;
+}
+
+int Merge()
+{
+    var valueOptions = new[] { "--out", "--title" };
+    var inputs = args.Skip(1).Where((a, i) => !a.StartsWith("--") && !valueOptions.Contains(args[i])).ToList();
+    if (inputs.Count == 0) { Console.Error.WriteLine("Give a WinTrace trace and/or Playwright traces.\n\n" + Usage); return 2; }
+    foreach (var i in inputs) if (!File.Exists(i)) { Console.Error.WriteLine($"File not found: {i}"); return 2; }
+
+    bool IsWinTrace(string path)
+    {
+        using var z = System.IO.Compression.ZipFile.OpenRead(path);
+        return z.GetEntry("events.ndjson") != null;
+    }
+
+    var tmp = Path.Combine(Path.GetTempPath(), "wintrace-merge-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        LoadedTrace t;
+        List<string> playwright;
+        if (IsWinTrace(inputs[0]))
+        {
+            t = TraceReader.Read(inputs[0], tmp);
+            playwright = inputs.Skip(1).ToList();
+        }
+        else
+        {
+            t = new LoadedTrace { Meta = new TraceMetadata { Title = Opt("--title") ?? Path.GetFileNameWithoutExtension(inputs[0]), Framework = "Playwright" } };
+            playwright = inputs;
+        }
+        if (Opt("--title") is string title) t.Meta.Title = title;
+        if (playwright.Count == 0) { Console.Error.WriteLine("Give at least one Playwright trace to merge."); return 2; }
+        foreach (var p in playwright)
+        {
+            if (IsWinTrace(p)) { Console.Error.WriteLine($"{p} is a WinTrace trace; only the first argument can be one."); return 2; }
+            var r = PlaywrightTrace.Merge(t.Meta, t.Events, t.Resources, p, new WinTrace.TraceOptions().RedactParams);
+            Console.Error.WriteLine($"Merged {Path.GetFileName(p)}: {r.Actions} web actions" + (r.PlaywrightVersion != null ? $" (Playwright {r.PlaywrightVersion})" : ""));
+        }
+        if (t.Meta.Started == default) t.Meta.Started = DateTimeOffset.UtcNow;
+        t.Meta.Stopped ??= t.Events.Count == 0 ? t.Meta.Started : t.Events.Max(e => e.Start.AddMilliseconds(e.DurationMs));
+
+        var output = Path.GetFullPath(Opt("--out") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(inputs[0]))!,
+            Path.GetFileNameWithoutExtension(inputs[0]) + "_merged.zip"));
+        var stem = Path.Combine(Path.GetDirectoryName(output)!, Path.GetFileNameWithoutExtension(output));
+        TraceArchive.Write(output, t.Meta, t.Events, t.Resources, t.VideoFiles);
+        byte[]? Res(string id) => t.Resources.TryGetValue(id, out var b) ? b : null;
+        var html = TraceHtmlExporter.Export(stem + ".html", t.Meta, t.Events, Res, t.VideoFiles, true, true)[0];
+        File.WriteAllText(stem + ".md", TraceReport.Markdown(t.Meta, t.Events, Res, Path.GetFileName(output), Path.GetFileName(html)));
+        Console.WriteLine(output);
+        Console.WriteLine(html);
+        Console.WriteLine(stem + ".md");
+        return 0;
+    }
+    finally
+    {
+        if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+    }
 }
 
 int Snapshot()
@@ -257,7 +319,7 @@ int Summary(LoadedTrace t)
     {
         var status = e.Kind == "log" ? "log " : e.Kind != "error" ? "ok  " : failed ? "FAIL" : "rcvd";
         var capture = e.CaptureMs is double c && c >= 1000 ? $"  (capture {c / 1000:F1}s)" : "";
-        Console.WriteLine($"{status} #{e.Seq,-3} +{Offset(t, e),7:F2}s {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {e.Name} {e.Target}{capture}");
+        Console.WriteLine($"{status} #{e.Seq,-3} +{Offset(t, e),7:F2}s {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {(e.Origin == "web" ? "[web] " : "")}{e.Name} {e.Target}{capture}");
         if (e.Error != null) Console.WriteLine("       " + (e.CauseSeq is int cause ? $"(failed in #{cause}) " : "") + e.Error);
     }
     if (failed) Console.WriteLine($"\nDetails of the failure: wintrace inspect \"{args[1]}\"");
@@ -350,6 +412,8 @@ int Inspect(LoadedTrace t)
     Console.WriteLine($"Step #{e.Seq} {e.Name}{verdictLabel}");
     if (e.Target != null) Console.WriteLine($"Target:   {e.Target}");
     if (e.Group != null) Console.WriteLine($"Group:    {e.Group}");
+    if (e.Origin == "web") Console.WriteLine("Origin:   web (Playwright trace; DOM, network and console are in the original under playwright/ in the zip)");
+    if (e.Location != null) Console.WriteLine($"Called:   {e.Location}");
     Console.WriteLine($"Time:     +{Offset(t, e):F2}s, took {e.DurationMs:F0} ms"
         + (e.CaptureMs is double cap ? $" (+{cap:F0} ms capture{(e.SnapshotMs is double snap ? $", UI tree {snap:F0} ms" : "")})" : ""));
     foreach (var p in e.Params) Console.WriteLine($"Param:    {p.Key} = {p.Value}");

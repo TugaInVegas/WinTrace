@@ -10,7 +10,7 @@ minor version, with the old member marked `[Obsolete]` and an entry in the chang
 | Area | Members |
 |---|---|
 | Per-test session | `new TraceSession(testName, source, outputDir, options)`, `Recorder`, `Finish(testFailed, attach)`, `Finish(testFailed, attach, failureMessage)`, `SaveOnlyOnFailure`, `WriteHtml`, `StartVideo` |
-| Recording | `TraceRecorder.Step(...)` (all overloads), `Group`, `Log`, `AttachVideo`, `TraceRecorder.Current` |
+| Recording | `TraceRecorder.Step(...)` (all overloads), `Group`, `Log`, `AttachVideo`, `ImportPlaywrightTrace`, `TraceRecorder.Current` |
 | Options | `TraceOptions` properties and their defaults, `SnapshotMode`, `Capture` |
 | Sources | `ITraceSource`, `AppiumTraceSource` |
 | Appium helpers | `Find`, `FindAll`, `Click`, `SendKeys`, `Clear` and the `...Traced` extensions |
@@ -21,7 +21,8 @@ minor version, with the old member marked `[Obsolete]` and an entry in the chang
 
 - The viewer's look and layout.
 - The wording of text (non-JSON) output of the CLI.
-- `TraceAnalysis`, `TraceReader`, `TraceHtmlExporter` and other lower-level types.
+- `TraceAnalysis`, `TraceReader`, `TraceHtmlExporter`, `PlaywrightTrace` and other lower-level types.
+- Which Playwright events become web steps or log lines (Playwright's trace format is itself internal).
 - Default output folder and file names (announced in the changelog).
 
 ## Versioning
