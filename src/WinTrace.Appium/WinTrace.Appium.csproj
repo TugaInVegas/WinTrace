@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>WinTrace.Appium</PackageId>
+    <Description>WinTrace adapter for Appium-based Windows drivers (WinAppDriver, NovaWindowsDriver).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Appium.WebDriver" Version="4.4.5" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.1.0" />
+  </ItemGroup>
+  <ItemGroup><ProjectReference Include="..\WinTrace.Core\WinTrace.Core.csproj" /></ItemGroup>
+</Project>
