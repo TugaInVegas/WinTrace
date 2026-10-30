@@ -161,6 +161,8 @@ Traces are written to `TestResults/WinTrace` by default (change it with the `out
     path: '**/TestResults/WinTrace/*'
 ```
 
-Keep the `.html` together with its `<name>_files` folder (it holds the video, when there is one).
+Each failed test leaves a `.zip`, a self-contained `.html`, a `.md` summary and the failure screenshot. The `.md`
+reads well in CI logs and artifact viewers. With `EmbedVideoInHtml = false`, keep the `.html` together with its
+`<name>_files` folder.
 
 Next: [Using the viewer](viewer.md).

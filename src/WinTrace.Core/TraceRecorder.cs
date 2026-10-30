@@ -259,6 +259,14 @@ namespace WinTrace
             return path;
         }
 
+        internal byte[]? GetResource(string id) { lock (_gate) return _resources.TryGetValue(id, out var b) ? b : null; }
+
+        /// <summary>A copy of the trace metadata (title, start, outcome, videos...).</summary>
+        public TraceMetadata GetMetadata()
+        {
+            lock (_gate) return JsonSerializer.Deserialize<TraceMetadata>(JsonSerializer.Serialize(_meta, Json), Json)!;
+        }
+
         /// <summary>Write trace.zip (trace.json, events.ndjson, resources/, snapshots/, video/).</summary>
         public string Save(string path)
         {

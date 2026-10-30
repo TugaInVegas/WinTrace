@@ -16,9 +16,12 @@ Facts an agent needs:
 - Use `Step(name, target, Capture.None, ...)` for frequent probes/polls; pass the real test outcome to `Finish`.
 - Traces are saved only for failed tests, to `TestResults/WinTrace/<test>_<time>_failed.zip` (+ `.html`).
 - Keep `TraceOptions.Snapshots = SnapshotMode.OnError` (default): UI tree capture can take tens of seconds.
-- Read a trace without a browser: `wintrace summary <zip> [--json]`,
-  `wintrace inspect <zip> [--step N] [--tree] [--extract <dir> [--all]] [--json]` (shows the failure, stack trace,
-  similar UI elements for a failed locator, and saves screenshots as PNG).
+- Each failed trace has a `.md` report and the failure screenshot next to it: read those first.
+- CLI (each command takes a trace or a folder = newest failed trace): `wintrace list <folder> [--failed] [--json]`,
+  `wintrace summary <zip|folder> [--json]`, `wintrace inspect <zip|folder> [--step N] [--tree] [--extract <dir> [--all]] [--markdown] [--json]`.
+- Locators for new tests come from the running app: `wintrace snapshot --window "<title>" [--find <text>] [--json]`
+  (WinAppDriver; Appium 2 / NovaWindows: `--url ... --automation-name NovaWindows`). Never guess locators.
+- Claude Code skills: integrations/claude-code/skills (debug-ui-test, write-ui-test).
 
 ## Docs
 

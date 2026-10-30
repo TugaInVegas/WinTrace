@@ -52,6 +52,28 @@ namespace WinTrace
     /// </summary>
     public static class TraceAnalysis
     {
+        /// <summary>Step errors that are not the same failure propagating out of a nested step (no <c>CauseSeq</c>).</summary>
+        public static IReadOnlyList<TraceEvent> StepErrors(IEnumerable<TraceEvent> events) =>
+            events.Where(e => e.Kind == "error" && e.CauseSeq == null).OrderBy(e => e.Seq).ToList();
+
+        /// <summary>Whether the test failed: the reported outcome, or for older traces, any step error.</summary>
+        public static bool IsFailed(TraceMetadata meta, IEnumerable<TraceEvent> events) =>
+            meta.Outcome != null ? meta.Outcome == "failed" : StepErrors(events).Count > 0;
+
+        /// <summary>
+        /// The step to look at first: where the test failed (the last step error; nested failures report their
+        /// innermost step), or in a passed test the first recovered error. When the test failed outside any step,
+        /// returns the last recorded step and sets <paramref name="failedOutsideSteps"/>.
+        /// </summary>
+        public static TraceEvent? FailureStep(TraceMetadata meta, IReadOnlyList<TraceEvent> events, out bool failedOutsideSteps)
+        {
+            var errors = StepErrors(events);
+            var failed = IsFailed(meta, events);
+            failedOutsideSteps = failed && errors.Count == 0;
+            if (failedOutsideSteps) return events.LastOrDefault(e => e.Kind != "log") ?? events.LastOrDefault();
+            return failed ? errors.LastOrDefault() : errors.FirstOrDefault();
+        }
+
         /// <summary>Parses an XML UI tree into a flat list in document order. Returns empty for non-XML snapshots.</summary>
         public static IReadOnlyList<UiElement> ParseTree(string? snapshot)
         {

@@ -28,6 +28,16 @@ Based on feedback from a real MSTest + WinAppDriver suite.
   when the step has no target; `--extract <dir> --all` saves every screenshot; shows nested-failure causes.
 - [API stability](docs/stability.md) page.
 
+For AI coding agents (and people) working on desktop tests:
+- A Markdown report (`.md`) and the screenshot at the failure are written next to each saved trace
+  (`TraceSession.WriteMarkdown`, on by default); `TraceReport.Markdown` in Core; `wintrace inspect --markdown`.
+- `wintrace list <folder>`: traces newest first with outcome and failing step (`--failed`, `--json`).
+- `summary`, `inspect` and `show` accept a folder and use the newest failed trace in it.
+- `wintrace snapshot`: the live UI tree of a window from WinAppDriver or an Appium server (NovaWindowsDriver), with a
+  suggested locator per element; `--find`, `--out`, `--screenshot`, `--session`, `--root`, `--json`.
+- Claude Code skills in `integrations/`: `debug-ui-test` and `write-ui-test`.
+- `TraceRecorder.GetMetadata()`, `TraceReader.ReadSummary()`, `TraceAnalysis.IsFailed/StepErrors/FailureStep`.
+
 ### Fixed
 - A failure inside nested steps was captured once per level (screenshots, UI tree and error events). It is now
   captured once; outer steps are marked as failed in that step (`causeSeq`).

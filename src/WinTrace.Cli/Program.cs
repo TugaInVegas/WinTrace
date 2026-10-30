@@ -7,22 +7,34 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using WinTrace;
+using WinTrace.Cli;
 
-const string Usage = @"wintrace - inspect WinTrace traces
+const string Usage = @"wintrace - inspect WinTrace traces and live Windows UI
 
-  wintrace show <trace.zip> [--out <file.html>] [--no-open]
-      Build the HTML report and open it.
+  wintrace list [<folder>] [--failed] [--limit <n>] [--json]
+      Traces under a folder (default: current), newest first, with outcome and failing step.
 
-  wintrace summary <trace.zip> [--json]
-      List steps and the test outcome. Exit code 1 if the test failed.
+  wintrace summary <trace.zip|folder> [--json]
+      Steps and the test outcome. Exit code 1 if the test failed.
 
-  wintrace inspect <trace.zip> [--step <n>] [--tree] [--extract <dir> [--all]] [--json]
+  wintrace inspect <trace.zip|folder> [--step <n>] [--tree] [--extract <dir> [--all]] [--markdown] [--json]
       Details of one step (default: the step where the test failed): error, stack trace, parameters,
       UI elements similar to the locator that failed, and the UI tree (--tree).
       --extract saves the step's screenshots and prints their paths; with --all, those of every step.
+      --markdown prints the full Markdown report (as written next to failed traces).
+
+  wintrace show <trace.zip|folder> [--out <file.html>] [--no-open]
+      Build the HTML report and open it.
+
+  wintrace snapshot [--url <driver-url>] (--window <title> | --session <id> | --root) [--find <text>]
+                    [--out <tree.xml>] [--screenshot <file.png>] [--automation-name <name>] [--json]
+      The live UI tree of a window from WinAppDriver or an Appium server (NovaWindowsDriver), with a
+      suggested locator per element. --find lists the elements matching or resembling a text.
+      Default URL: http://127.0.0.1:4723.
 
   wintrace --version
 
+A folder argument picks the newest failed trace in it (searching subfolders).
 Text output is meant for people, CI logs and AI agents; --json is stable for scripts.";
 
 // Dots as decimal separators whatever the OS language, so output is easy to parse.
@@ -36,8 +48,6 @@ if (args[0] == "--version")
     return 0;
 }
 
-if (args.Length < 2 || !File.Exists(args[1])) { Console.Error.WriteLine("Trace file not found.\n\n" + Usage); return 2; }
-var zip = Path.GetFullPath(args[1]);
 var json = args.Contains("--json");
 // Console output, never embedded in HTML: keep <, > and quotes readable.
 var jsonOptions = new JsonSerializerOptions
@@ -49,6 +59,14 @@ var jsonOptions = new JsonSerializerOptions
 
 string? Opt(string name) { var i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
 
+if (args[0] == "list") return List();
+if (args[0] == "snapshot") return Snapshot();
+if (args[0] is not ("show" or "summary" or "inspect")) { Console.Error.WriteLine(Usage); return 2; }
+if (args.Length < 2 || args[1].StartsWith("--")) { Console.Error.WriteLine("Give a trace file or a folder.\n\n" + Usage); return 2; }
+var zip = TraceFiles.Resolve(args[1], out var picked) ?? "";
+if (zip.Length == 0) { Console.Error.WriteLine($"No trace found at '{args[1]}'."); return 2; }
+if (picked != null) Console.Error.WriteLine($"Using {picked}");
+
 try
 {
     switch (args[0])
@@ -56,7 +74,7 @@ try
         case "show":
             return Show();
         case "summary":
-            return WithTrace(Summary);
+            return Summary(TraceReader.ReadSummary(zip));
         case "inspect":
             return WithTrace(Inspect);
         default:
@@ -84,21 +102,123 @@ int Show()
     return 0;
 }
 
-// summary and inspect only read events and resources; extracted videos go to a temp folder that is removed.
-int WithTrace(Func<LoadedTrace, int> body)
-{
-    var tmp = Path.Combine(Path.GetTempPath(), "wintrace-" + Guid.NewGuid().ToString("N"));
-    try { return body(TraceReader.Read(zip, tmp)); }
-    finally { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); }
-}
+// summary and inspect never need the videos.
+int WithTrace(Func<LoadedTrace, int> body) => body(TraceReader.Read(zip, null));
 
 double Offset(LoadedTrace t, TraceEvent e) => (e.Start - t.Meta.Started).TotalSeconds;
 
-// Step errors that are not just the same failure propagating out of a nested step.
-List<TraceEvent> RootErrors(LoadedTrace t) => t.Events.Where(e => e.Kind == "error" && e.CauseSeq == null).ToList();
+List<TraceEvent> RootErrors(LoadedTrace t) => TraceAnalysis.StepErrors(t.Events).ToList();
 
-// The outcome reported by the test framework; traces without one fall back to "any step failed".
-bool TestFailed(LoadedTrace t) => t.Meta.Outcome != null ? t.Meta.Outcome == "failed" : RootErrors(t).Count > 0;
+bool TestFailed(LoadedTrace t) => TraceAnalysis.IsFailed(t.Meta, t.Events);
+
+int List()
+{
+    var folder = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : ".";
+    var limit = int.TryParse(Opt("--limit"), out var l) ? l : 20;
+    var files = TraceFiles.Find(folder).Where(f => !args.Contains("--failed") || TraceFiles.IsFailedName(f.Name)).Take(limit).ToList();
+    var rows = new List<(FileInfo file, LoadedTrace? trace, string? error)>();
+    foreach (var f in files)
+        try { rows.Add((f, TraceReader.ReadSummary(f.FullName), null)); }
+        catch (Exception ex) when (ex is InvalidDataException || ex is JsonException || ex is IOException) { rows.Add((f, null, ex.Message)); }
+
+    if (json)
+    {
+        Console.WriteLine(JsonSerializer.Serialize(rows.Select(r =>
+        {
+            var step = r.trace == null ? null : TraceAnalysis.FailureStep(r.trace.Meta, r.trace.Events, out _);
+            var failed = r.trace != null && TraceAnalysis.IsFailed(r.trace.Meta, r.trace.Events);
+            return new
+            {
+                path = r.file.FullName,
+                written = r.file.LastWriteTime,
+                title = r.trace?.Meta.Title,
+                outcome = r.trace == null ? null : failed ? "failed" : "passed",
+                steps = r.trace?.Events.Count(e => e.Kind != "log"),
+                failingStep = failed && step != null ? new { step.Seq, step.Name, step.Target, step.Error } : null,
+                failureMessage = failed ? r.trace?.Meta.FailureMessage : null,
+                readError = r.error
+            };
+        }), jsonOptions));
+        return 0;
+    }
+
+    if (rows.Count == 0) { Console.WriteLine($"No traces under '{Path.GetFullPath(folder)}'."); return 0; }
+    foreach (var (file, trace, error) in rows)
+    {
+        if (trace == null) { Console.WriteLine($"????  {file.LastWriteTime:yyyy-MM-dd HH:mm}  {file.Name}  (unreadable: {error})"); continue; }
+        var failed = TraceAnalysis.IsFailed(trace.Meta, trace.Events);
+        var step = TraceAnalysis.FailureStep(trace.Meta, trace.Events, out var outside);
+        Console.WriteLine($"{(failed ? "FAIL" : "ok  ")}  {file.LastWriteTime:yyyy-MM-dd HH:mm}  {trace.Meta.Title}");
+        if (failed)
+            Console.WriteLine("      " + (outside ? "outside steps: " + (trace.Meta.FailureMessage ?? "(no message)")
+                : $"#{step?.Seq} {step?.Name} {step?.Target} — {step?.Error}"));
+        Console.WriteLine("      " + file.FullName);
+    }
+    return 0;
+}
+
+int Snapshot()
+{
+    var url = Opt("--url") ?? "http://127.0.0.1:4723";
+    var request = new LiveSnapshot.Request
+    {
+        Url = url,
+        Session = Opt("--session"),
+        Window = Opt("--window"),
+        Root = args.Contains("--root"),
+        AutomationName = Opt("--automation-name"),
+        WantScreenshot = Opt("--screenshot") != null
+    };
+    if (request.Session == null && request.Window == null && !request.Root)
+    {
+        Console.Error.WriteLine("Choose what to read: --window <title>, --session <id> or --root.\n\n" + Usage);
+        return 2;
+    }
+    LiveSnapshot.Result result;
+    try { result = LiveSnapshot.TakeAsync(request).GetAwaiter().GetResult(); }
+    catch (LiveSnapshotException ex) { Console.Error.WriteLine(ex.Message); return 2; }
+    catch (System.Net.Http.HttpRequestException ex) { Console.Error.WriteLine($"Could not reach the driver at {url}: {ex.Message}. Is WinAppDriver or Appium running?"); return 2; }
+
+    if (Opt("--out") is string outXml) File.WriteAllText(outXml, result.Source);
+    if (Opt("--screenshot") is string png && result.Screenshot != null) File.WriteAllBytes(png, result.Screenshot);
+    var elements = TraceAnalysis.ParseTree(result.Source);
+    var find = Opt("--find");
+    var matches = find == null ? null : LiveSnapshot.Search(result.Source, find);
+
+    if (json)
+    {
+        object Item(UiElement e) => new { e.Depth, e.Tag, e.Name, e.AutomationId, e.ClassName, locator = e.SuggestedLocator(), e.X, e.Y, e.Width, e.Height };
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            sessionId = result.SessionId,
+            elementCount = elements.Count,
+            matches = matches?.Select(m => new { score = Math.Round(m.Score, 2), element = Item(m.Element) }),
+            elements = find == null ? elements.Select(Item) : null
+        }, jsonOptions));
+        return 0;
+    }
+
+    if (matches != null)
+    {
+        Console.WriteLine(matches.Count == 0 ? $"No element matches or resembles \"{find}\" ({elements.Count} elements in the tree)."
+            : $"Elements matching \"{find}\" ({elements.Count} in the tree):");
+        foreach (var m in matches)
+            Console.WriteLine($"  {m.Score * 100,4:F0}%  {m.Element.Describe()}  ->  {m.Element.SuggestedLocator() ?? "(no AutomationId/Name/ClassName)"}");
+    }
+    else
+    {
+        foreach (var e in elements.Take(600))
+        {
+            var loc = e.SuggestedLocator();
+            Console.WriteLine(new string(' ', e.Depth * 2) + e.Describe() + (loc != null ? "   -> " + loc : ""));
+        }
+        if (elements.Count > 600) Console.WriteLine($"... {elements.Count - 600} more elements (use --out to save the full tree, or --find).");
+        if (elements.Count == 0) Console.WriteLine(result.Source);
+    }
+    if (Opt("--out") is string o) Console.Error.WriteLine($"UI tree written to {Path.GetFullPath(o)}");
+    if (Opt("--screenshot") is string p) Console.Error.WriteLine(result.Screenshot != null ? $"Screenshot written to {Path.GetFullPath(p)}" : "The driver returned no screenshot.");
+    return 0;
+}
 
 int Summary(LoadedTrace t)
 {
@@ -169,6 +289,12 @@ int Inspect(LoadedTrace t)
     var failedOutsideSteps = TestFailed(t) && RootErrors(t).Count == 0;
     // A step that failed because a nested step failed shares that step's capture.
     var captured = e.CauseSeq is int causeSeq ? t.Events.FirstOrDefault(x => x.Seq == causeSeq) ?? e : e;
+    if (args.Contains("--markdown"))
+    {
+        Console.WriteLine(TraceReport.Markdown(t.Meta, t.Events, id => t.Resources.TryGetValue(id, out var b) ? b : null, zip));
+        return 0;
+    }
+
     string? Text(string? id) => id != null && t.Resources.TryGetValue(id, out var b) ? System.Text.Encoding.UTF8.GetString(b) : null;
     var snapshot = Text(captured.Snapshot);
     var locator = e.Kind == "error" ? TraceAnalysis.GuessLocator(captured, t.Events) : null;

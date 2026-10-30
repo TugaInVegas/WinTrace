@@ -19,6 +19,7 @@ var session = new TraceSession(testName, source, outputDir: "TestResults/WinTrac
     SaveOnlyOnFailure = true,    // default: keep traces of failed tests only
     WriteHtml = true,            // default: write the HTML report next to the zip
     EmbedVideoInHtml = true,     // default: the HTML is a single file, video included
+    WriteMarkdown = true,        // default: also a .md report and the failure screenshot
     SaveRecoveredErrors = false  // default: a passed test is not saved just because a step threw and was recovered
 };
 ```
@@ -33,7 +34,8 @@ var session = new TraceSession(testName, source, outputDir: "TestResults/WinTrac
 The outcome you pass to `Finish` is stored in the trace and drives the viewer's passed/failed badge, `wintrace
 summary` and its exit code. Steps that threw in a passed test are shown as *recovered errors*.
 
-File names are `<test name>_<yyyyMMdd_HHmmss>[_failed].zip` and `.html`. Characters that are not valid in
+File names are `<test name>_<yyyyMMdd_HHmmss>[_failed]` with `.zip`, `.html`, `.md` (summary for people and
+AI agents) and `.png`/`.jpg` (the screenshot at the failure). Characters that are not valid in
 file names are removed from the test name.
 
 ## TraceOptions

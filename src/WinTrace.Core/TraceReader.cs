@@ -22,7 +22,13 @@ namespace WinTrace
     {
         static readonly JsonSerializerOptions Json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-        public static LoadedTrace Read(string zipPath, string videoExtractDir)
+        /// <summary>Loads everything. Videos are extracted to <paramref name="videoExtractDir"/>, or skipped when it is null.</summary>
+        public static LoadedTrace Read(string zipPath, string? videoExtractDir) => Read(zipPath, videoExtractDir, true);
+
+        /// <summary>Loads only metadata and events (no images, snapshots or videos): fast, for listing many traces.</summary>
+        public static LoadedTrace ReadSummary(string zipPath) => Read(zipPath, null, false);
+
+        static LoadedTrace Read(string zipPath, string? videoExtractDir, bool resources)
         {
             var t = new LoadedTrace();
             using (var zip = ZipFile.OpenRead(zipPath))
@@ -36,12 +42,13 @@ namespace WinTrace
                             .Select(l => JsonSerializer.Deserialize<TraceEvent>(l, Json)!).ToList();
                     else if (e.FullName.StartsWith("video/"))
                     {
+                        if (videoExtractDir == null) continue;
                         Directory.CreateDirectory(videoExtractDir);
                         var dest = Path.Combine(videoExtractDir, Path.GetFileName(e.FullName));
                         using (var s = e.Open()) using (var f = File.Create(dest)) s.CopyTo(f);
                         t.VideoFiles[e.FullName] = dest;
                     }
-                    else
+                    else if (resources)
                         using (var s = e.Open()) using (var ms = new MemoryStream())
                         {
                             s.CopyTo(ms);
