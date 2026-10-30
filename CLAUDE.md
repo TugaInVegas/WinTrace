@@ -13,6 +13,7 @@ Keep `WinTrace.Appium` driver-agnostic (`IWebDriver` only) and keep UIA snapshot
   workflow `publish.yml`, ref `main`, input `version`, e.g. `0.1.1`). It tests, packs, publishes to
   nuget.org via Trusted Publishing (OIDC, repo variable `NUGET_USER`) and creates the `vX.Y.Z`
   tag + GitHub release with the .nupkg files.
+- Before releasing, update `CHANGELOG.md` and `<Version>` in `Directory.Build.props`.
 - Do not push tags from the session: tag pushes are refused there. A published NuGet version
   cannot be deleted, so bump the version for every release.
 

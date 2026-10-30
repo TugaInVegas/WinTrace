@@ -15,6 +15,14 @@ public class RecorderTests
     }
 
     [Fact]
+    public void Xml_snapshot_is_stored_as_xml()
+    {
+        var rec = new TraceRecorder(new FakeSource(), new TraceOptions { Snapshots = SnapshotMode.Always });
+        rec.Step("x", null, () => { });
+        Assert.EndsWith(".xml", rec.Events[0].Snapshot);
+    }
+
+    [Fact]
     public void Step_records_event_with_artifacts_and_redacts()
     {
         var rec = new TraceRecorder(new FakeSource(), new TraceOptions { Snapshots = SnapshotMode.Always });
@@ -35,6 +43,46 @@ public class RecorderTests
         Assert.Null(rec.Events[0].Snapshot);
         Assert.NotNull(rec.Events[1].Snapshot);
         Assert.True(rec.HasErrors);
+    }
+
+    [Fact]
+    public void Target_matching_redact_list_hides_all_params()
+    {
+        var rec = new TraceRecorder();
+        rec.Step("type", "Password box", () => { }, new Dictionary<string, string> { ["text"] = "hunter2" });
+        Assert.Equal("***", rec.Events[0].Params["text"]);
+    }
+
+    [Fact]
+    public void Groups_nest_and_unwind()
+    {
+        var rec = new TraceRecorder();
+        using (rec.Group("Login"))
+        {
+            using (rec.Group("Submit")) rec.Log("inner");
+            rec.Log("outer");
+        }
+        rec.Log("none");
+        Assert.Equal(new[] { "Login / Submit", "Login", null }, rec.Events.Select(e => e.Group).ToArray());
+    }
+
+    [Fact]
+    public void Identical_screenshots_are_stored_once()
+    {
+        var rec = new TraceRecorder(new FakeSource());
+        rec.Step("a", null, () => { });
+        rec.Step("b", null, () => { });
+        var shots = rec.Events.SelectMany(e => new[] { e.ScreenshotBefore, e.ScreenshotAfter }).Distinct().ToList();
+        Assert.Single(shots);
+    }
+
+    [Fact]
+    public void Error_detail_includes_stack()
+    {
+        var rec = new TraceRecorder();
+        Assert.ThrowsAny<Exception>(() => rec.Step("x", null, () => throw new InvalidOperationException("boom")));
+        Assert.Contains("InvalidOperationException", rec.Events[0].ErrorDetail);
+        Assert.Contains("at ", rec.Events[0].ErrorDetail);
     }
 
     [Fact]
@@ -59,7 +107,7 @@ public class RecorderTests
             var names = z.Entries.Select(x => x.FullName).ToList();
             Assert.Contains("trace.json", names);
             Assert.Contains("events.ndjson", names);
-            Assert.Contains("resources/0001-before.png", names);
+            Assert.Contains(names, n => n.StartsWith("resources/") && n.EndsWith(".png"));
         }
         var html = File.ReadAllText(rec.SaveHtml(Path.Combine(dir, "trace.html")));
         Assert.Contains("\"name\":\"click\"", html);
