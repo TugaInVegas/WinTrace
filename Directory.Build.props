@@ -23,5 +23,7 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(IsPackable)' != 'false'">
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <!-- Lets coding agents find usage instructions inside the restored package. -->
+    <None Include="$(MSBuildThisFileDirectory)llms.txt" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

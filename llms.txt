@@ -1,0 +1,33 @@
+# WinTrace
+
+> Playwright-style traces for Windows desktop UI tests (.NET). Records each test step with before/after
+> screenshots, timings, errors with stack traces, the UI Automation tree on failure and an optional screen
+> recording, into trace.zip + a self-contained HTML viewer. Works with WinAppDriver and NovaWindowsDriver
+> (Appium.WebDriver 4.x) and any test framework (MSTest, NUnit, xUnit). License Apache-2.0.
+
+Facts an agent needs:
+
+- Packages: `WinTrace.Appium` (adapter, brings `WinTrace.Core`), `WinTrace.Cli` (dotnet tool `wintrace`).
+- Core API: `new TraceSession(testName, new AppiumTraceSource(() => driver))` in test setup;
+  `session.Finish(testFailed, attachCallback)` in teardown; steps via `session.Recorder`
+  (`Find`, `FindAll`, `Click`, `SendKeys`, `Clear`, `Step(name, target, () => ...)`, `Log`, `Group`).
+- Only explicit steps are recorded. Wrap the project's central interaction helpers or page-object methods.
+- Traces are saved only for failed tests, to `TestResults/WinTrace/<test>_<time>_failed.zip` (+ `.html`).
+- Keep `TraceOptions.Snapshots = SnapshotMode.OnError` (default): UI tree capture can take tens of seconds.
+- Read a trace without a browser: `wintrace summary <zip> [--json]`,
+  `wintrace inspect <zip> [--step N] [--tree] [--extract <dir>] [--json]` (shows the failure, stack trace,
+  similar UI elements for a failed locator, and saves screenshots as PNG).
+
+## Docs
+
+- [Integration guide for AI agents](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/ai-agents.md): step-by-step recipe to add WinTrace to a test project, and how to debug failures from traces.
+- [Getting started](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/getting-started.md): MSTest, NUnit, xUnit setup and CI publishing.
+- [Configuration](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/configuration.md): TraceOptions, TraceSession, video, performance, privacy.
+- [Trace format](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/trace-format.md): contents of trace.zip.
+- [Troubleshooting](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/troubleshooting.md)
+
+## Optional
+
+- [Viewer guide](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/viewer.md)
+- [Writing an adapter](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/adapters.md): support tools other than Appium (e.g. FlaUI).
+- [README](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/README.md)

@@ -16,6 +16,11 @@
 - Documentation in `docs/`: getting started (MSTest, NUnit, xUnit, CI), viewer, configuration, adapters,
   trace format, troubleshooting.
 
+- AI agents: `docs/ai-agents.md` integration recipe, `llms.txt` (also inside each package), `AGENTS.md`.
+- `wintrace inspect`: failed step, stack trace, UI elements similar to a failed locator, UI tree as text
+  (`--tree`), screenshots saved as PNG (`--extract`). `wintrace summary --json` and `inspect --json`.
+- `TraceAnalysis` in Core: parse UI trees, compact text tree, find elements similar to a locator.
+
 ### Fixed
 - Clicking a screenshot did nothing in Chrome (it opened a blocked `data:` URL).
 
