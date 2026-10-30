@@ -28,6 +28,12 @@ video{max-width:100%;max-height:280px;background:#000;margin-bottom:12px}
 pre{background:var(--sel);padding:10px;overflow:auto;max-height:360px;border-radius:6px}
 .err{color:var(--err);font-weight:600}table{border-collapse:collapse}td{padding:2px 12px 2px 0;vertical-align:top}
 .k{color:var(--mut);font-size:12px}
+details.stack summary{cursor:pointer;color:var(--mut)}
+.tree{font:12px ui-monospace,Consolas,monospace;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px}
+.tree details{margin-left:14px}.tree summary{cursor:pointer;white-space:nowrap}.tree .leaf{margin-left:28px;white-space:nowrap}
+.tree .tag{color:var(--acc);font-weight:600}.tree .hit{background:#fbc02d55}
+.tools{display:flex;gap:8px;align-items:center;margin:8px 0}
+button{font:inherit;padding:2px 8px;cursor:pointer}
 @media(max-width:760px){#body{flex-direction:column}#side{width:auto;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
 <header id="hd"></header>
@@ -74,14 +80,35 @@ function select(i,seek){
   const p=Object.entries(e.params||{}).map(([k,v])=>`<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const prev=$('#vid'),keep=prev&&video;
   $('#main').innerHTML=`${video?`<video id="vid" src="${esc(video.src)}" controls></video>`:''}
-   <h2>#${e.seq} ${esc(e.name)}</h2>${e.target?`<p>Target: <code>${esc(e.target)}</code></p>`:''}
+   <h2>#${e.seq} ${esc(e.name)}</h2>${e.target?`<p>Target: <code id="tgt">${esc(e.target)}</code> <button id="cp">Copy</button></p>`:''}
+   ${e.group?`<p class="k">Group: ${esc(e.group)}</p>`:''}
    <p class="k">+${(off(e)/1000).toFixed(2)} s · ${Math.round(e.durationMs||0)} ms</p>
-   ${e.error?`<p class="err">${esc(e.error)}</p>`:''}<table>${p}</table>
+   ${e.error?`<p class="err">${esc(e.error)}</p>`:''}
+   ${e.errorDetail?`<details class="stack"><summary>Stack trace</summary><pre>${esc(e.errorDetail)}</pre></details>`:''}<table>${p}</table>
    <div class="shots">${fig('Before','screenshotBefore')}${fig('After','screenshotAfter')}</div>
-   ${e.snapshot&&R[e.snapshot]?`<h3>UI snapshot</h3><pre>${esc(R[e.snapshot])}</pre>`:''}`;
+   ${e.snapshot&&R[e.snapshot]?`<h3>UI snapshot</h3><div id="snap"></div>`:''}`;
+  if(e.snapshot&&R[e.snapshot])renderSnapshot($('#snap'),R[e.snapshot],e.snapshot);
+  const cp=$('#cp');if(cp)cp.onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(e.target).then(()=>cp.textContent='Copied');
   const v=$('#vid');
   if(v){v.currentTime=Math.max(0,(Date.parse(e.start)-Date.parse(video.started))/1000);v.ontimeupdate=()=>cursor(v)}
   $('#cursor').style.left=(off(e)/total*100)+'%';
+}
+// UIA trees (WinAppDriver/NovaWindows PageSource) as a collapsible, searchable tree; anything else as text.
+function renderSnapshot(host,text,name){
+  const doc=name.endsWith('.xml')?new DOMParser().parseFromString(text,'application/xml'):null;
+  if(!doc||doc.querySelector('parsererror')){host.innerHTML=`<pre>${esc(text)}</pre>`;return}
+  const label=n=>{const a=k=>n.getAttribute(k);const parts=[['Name',a('Name')],['AutomationId',a('AutomationId')],['ClassName',a('ClassName')]]
+    .filter(([,v])=>v).map(([k,v])=>`${k}="${esc(v)}"`).join(' ');return `<span class="tag">${esc(n.tagName)}</span> ${parts}`};
+  const node=(n,depth)=>{const kids=[...n.children];const attrs=[...n.attributes].map(a=>`${a.name}=${a.value}`).join('\n');
+    return kids.length?`<details${depth<2?' open':''}><summary title="${esc(attrs)}">${label(n)}</summary>${kids.map(c=>node(c,depth+1)).join('')}</details>`
+      :`<div class="leaf" title="${esc(attrs)}">${label(n)}</div>`};
+  host.innerHTML=`<div class="tools"><input type="search" id="sq" placeholder="Find in UI tree (Name, AutomationId...)"><span class="k" id="sc"></span>
+    <button id="raw">Raw XML</button></div><div class="tree">${node(doc.documentElement,0)}</div>`;
+  $('#raw').onclick=()=>{host.innerHTML=`<pre>${esc(text)}</pre>`};
+  $('#sq').oninput=ev=>{const q=ev.target.value.toLowerCase();let n=0;
+    host.querySelectorAll('summary,.leaf').forEach(el=>{const hit=q&&(el.textContent+' '+el.title).toLowerCase().includes(q);el.classList.toggle('hit',!!hit);
+      if(hit){n++;for(let p=el.parentElement;p&&p!==host;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true}});
+    $('#sc').textContent=q?n+' match(es)':'';const first=host.querySelector('.hit');if(first)first.scrollIntoView({block:'nearest'})};
 }
 function cursor(v){const ms=Date.parse(video.started)+v.currentTime*1000-t0;$('#cursor').style.left=Math.min(100,Math.max(0,ms/total*100))+'%'}
 function visible(){return items.map((x,i)=>x.d.style.display!=='none'?i:-1).filter(i=>i>=0)}

@@ -14,6 +14,8 @@ namespace WinTrace
         public DateTimeOffset Start { get; set; }
         public double DurationMs { get; set; }
         public string? Error { get; set; }
+        /// <summary>Full exception text (type, message, stack) when the step failed.</summary>
+        public string? ErrorDetail { get; set; }
         public string? Group { get; set; }
         public string? ScreenshotBefore { get; set; }
         public string? ScreenshotAfter { get; set; }
@@ -49,9 +51,14 @@ namespace WinTrace
         public string Title { get; set; } = "WinTrace";
         public string Framework { get; set; } = "";
         public bool Screenshots { get; set; } = true;
+        /// <summary>Also capture a screenshot before each step. Turn off to halve capture cost on slow drivers.</summary>
+        public bool ScreenshotBefore { get; set; } = true;
         /// <summary>UI-tree snapshots can be very slow on WinAppDriver (tens of seconds); default is errors only.</summary>
         public SnapshotMode Snapshots { get; set; } = SnapshotMode.OnError;
-        /// <summary>Param names (case-insensitive substrings) whose values are replaced with ***.</summary>
+        /// <summary>
+        /// Case-insensitive substrings. A param whose name matches is replaced with ***; when the step
+        /// target matches (e.g. "Password box"), all of that step's params are replaced.
+        /// </summary>
         public ISet<string> RedactParams { get; set; } =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "password", "secret", "token" };
     }
