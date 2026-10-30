@@ -32,8 +32,16 @@ namespace WinTrace
                 CreateNoWindow = true
             });
             r.StartedAt = DateTimeOffset.UtcNow;
-            // ffmpeg writes progress to stderr; drain it so the pipe never blocks the encoder.
-            r._proc!.ErrorDataReceived += (_, __) => { };
+            // ffmpeg needs a moment to open the device; "Press [q]" marks the real start of capture,
+            // so re-anchor there to keep steps in sync with the video. Draining stderr also stops the
+            // pipe from blocking the encoder.
+            var anchored = false;
+            r._proc!.ErrorDataReceived += (_, e) =>
+            {
+                if (anchored || e.Data == null || e.Data.IndexOf("Press [q]", StringComparison.Ordinal) < 0) return;
+                anchored = true;
+                r.StartedAt = DateTimeOffset.UtcNow;
+            };
             r._proc.BeginErrorReadLine();
             return r;
         }

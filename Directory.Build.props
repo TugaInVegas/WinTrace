@@ -3,12 +3,22 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Authors>WinTrace contributors</Authors>
+    <Authors>TugaInVegas</Authors>
+    <Copyright>Copyright (c) TugaInVegas</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/TugaInVegas/WinTrace</RepositoryUrl>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
+    <!-- Debugging into the packages: symbols (.snupkg) + Source Link back to this repo. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- IntelliSense docs in the packages; not every member is documented yet. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>windows;ui-automation;trace;winappdriver;appium;flaui;testing</PackageTags>
+    <PackageTags>windows;ui-automation;trace;winappdriver;appium;novawindows;testing</PackageTags>
     <PackageProjectUrl>https://github.com/TugaInVegas/WinTrace</PackageProjectUrl>
   </PropertyGroup>
   <ItemGroup Condition="'$(IsPackable)' != 'false'">

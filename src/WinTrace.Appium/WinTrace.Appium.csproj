@@ -6,7 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Appium.WebDriver" Version="4.4.5" />
-    <PackageReference Include="MSTest.TestFramework" Version="4.1.0" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="..\WinTrace.Core\WinTrace.Core.csproj" /></ItemGroup>
 </Project>
