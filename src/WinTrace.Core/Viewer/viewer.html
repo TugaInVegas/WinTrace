@@ -3,10 +3,10 @@
 <title>WinTrace</title>
 <style>
 :root{--bg:#ffffff;--panel:#f6f7f9;--fg:#1d1f23;--mut:#646a73;--line:#dfe2e7;--sel:#e7effd;--hover:#f0f3f8;
-  --acc:#1a64d6;--err:#c62828;--err-bg:#fdecea;--ok:#2e7d32;--log:#8a9099;--hit:#fbc02d66;--box:#1a64d6;--pick:#e65100;
+  --acc:#1a64d6;--err:#c62828;--err-bg:#fdecea;--warn:#a85d00;--warn-bg:#fff4e0;--ok:#2e7d32;--log:#8a9099;--hit:#fbc02d66;--box:#1a64d6;--pick:#e65100;
   --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17181b;--panel:#1f2125;--fg:#eceef1;--mut:#9aa0a8;
-  --line:#33363c;--sel:#22314a;--hover:#262a31;--acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--ok:#6cc070;--log:#80868f;
+  --line:#33363c;--sel:#22314a;--hover:#262a31;--acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--warn:#ffb74d;--warn-bg:#3a2e1c;--ok:#6cc070;--log:#80868f;
   --hit:#fbc02d44;--box:#7fb0ff;--pick:#ffab40;color-scheme:dark}}
 :root[data-theme=dark]{--bg:#17181b;--panel:#1f2125;--fg:#eceef1;--mut:#9aa0a8;--line:#33363c;--sel:#22314a;--hover:#262a31;
   --acc:#7fb0ff;--err:#ff6b6b;--err-bg:#3a2224;--ok:#6cc070;--log:#80868f;--hit:#fbc02d44;--box:#7fb0ff;--pick:#ffab40;color-scheme:dark}
@@ -23,17 +23,17 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 .brand{display:flex;align-items:center;gap:8px;min-width:0}.brand svg{flex:none}
 .brand h1{font-size:15px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:12px;padding:1px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--mut)}
-.chip.bad{color:var(--err);border-color:var(--err);background:var(--err-bg)}.chip.good{color:var(--ok)}
+.chip.bad{color:var(--err);border-color:var(--err);background:var(--err-bg)}.chip.good{color:var(--ok)}.chip.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-bg)}
 .spacer{flex:1}.icon{width:30px;padding:3px 0;text-align:center}
 #banner{display:flex;gap:10px;align-items:center;padding:8px 16px;background:var(--err-bg);color:var(--err);border-bottom:1px solid var(--line);cursor:pointer}
-#banner b{white-space:nowrap}#banner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#banner[hidden]{display:none}#banner b{white-space:nowrap}#banner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* timeline */
 #tlwrap{position:relative;padding:4px 16px 8px;border-bottom:1px solid var(--line)}
 #ticks{position:relative;height:16px;font-size:11px;color:var(--mut)}#ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 #ticks span:first-child{transform:none}
 #tl{position:relative;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;overflow:hidden}
 #tl .seg{position:absolute;top:5px;bottom:5px;min-width:3px;background:var(--ok);border-radius:2px;opacity:.8}
-#tl .seg.error{background:var(--err);opacity:1}#tl .seg.log{background:var(--log);top:12px;bottom:12px;width:2px!important;min-width:2px}
+#tl .seg.error{background:var(--err);opacity:1}#tl .seg.recovered{background:var(--warn)}#tl .seg.log{background:var(--log);top:12px;bottom:12px;width:2px!important;min-width:2px}
 #tl .seg.on{outline:2px solid var(--acc);outline-offset:1px;opacity:1}#tl .seg.dim{opacity:.15}
 #cursor{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none;z-index:2}
 #tip{position:absolute;z-index:20;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 6px 24px #0003;pointer-events:none;max-width:280px;font-size:12px}
@@ -50,7 +50,7 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 .ev{display:grid;grid-template-columns:18px 1fr auto;gap:2px 8px;align-items:baseline;padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
 .ev:hover{background:var(--hover)}.ev[aria-selected=true]{background:var(--sel)}
 .ev .st{font-weight:700;text-align:center}.ev.action .st{color:var(--ok)}.ev.error .st{color:var(--err)}.ev.log .st{color:var(--log)}
-.ev .n{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev.error .n{color:var(--err)}.ev.log .n{font-weight:400;color:var(--mut);white-space:normal}
+.ev .n{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev.error .n{color:var(--err)}.ev.recovered .st,.ev.recovered .n{color:var(--warn)}.ev.log .n{font-weight:400;color:var(--mut);white-space:normal}
 .ev .d{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
 .ev .t{grid-column:2/4;color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)}
 .ev .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--acc);opacity:.35}
@@ -67,7 +67,7 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 .tab{padding:14px 18px 24px}
 .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
 .shots figure{margin:0}.shots figcaption{color:var(--mut);font-size:12px;margin-bottom:4px}
-.shots video{width:100%;background:#000;border-radius:4px;display:block}
+.shots video{width:100%;background:#000;border-radius:4px;display:block}.vidnote{color:var(--warn)}
 .shots img{width:100%;border:1px solid var(--line);border-radius:4px;cursor:zoom-in;display:block;background:var(--panel)}
 .note{color:var(--mut);padding:10px 0}
 table.kv{border-collapse:collapse;width:100%}table.kv td{padding:5px 10px 5px 0;vertical-align:top;border-bottom:1px solid var(--line)}
@@ -155,27 +155,39 @@ const off=e=>Date.parse(e.start)-t0;
 const total=Math.max(1,...EV.map(e=>off(e)+(e.durationMs||0)));
 const maxDur=Math.max(1,...EV.filter(e=>e.kind!=='log').map(e=>e.durationMs||0));
 const errors=EV.filter(e=>e.kind==='error');
-const video=(D.meta.videos||[]).find(v=>v.src);
-document.title=(errors.length?'✗ ':'')+(D.meta.title||'WinTrace')+' · WinTrace';
+// Failures caused by a nested step's failure share its capture and are not counted twice.
+const rootErrors=errors.filter(e=>!e.causeSeq);
+// The outcome reported by the test framework wins; old traces fall back to "any step failed".
+const failed=D.meta.outcome?D.meta.outcome==='failed':rootErrors.length>0;
+const isRecovered=e=>!failed&&e.kind==='error';
+const finalErr=failed?rootErrors[rootErrors.length-1]:null;
+// Video segments, embedded in the report (base64) or as files next to it.
+const segs=(D.meta.videos||[]).filter(v=>v.src||(v.embedded&&R[v.embedded]))
+  .map(v=>({v,start:Date.parse(v.started),dur:v.durationSeconds??null,url:null})).sort((a,b)=>a.start-b.start);
+const video=segs.length?segs[0].v:null;
+document.title=(failed?'✗ ':'')+(D.meta.title||'WinTrace')+' · WinTrace';
 
 // header
 $('#title').textContent=D.meta.title||'WinTrace';
 const steps=EV.filter(e=>e.kind!=='log').length;
 $('#chips').innerHTML=[
-  errors.length?`<span class="chip bad">${errors.length} failed</span>`:`<span class="chip good">passed</span>`,
+  failed?`<span class="chip bad">failed</span>`:`<span class="chip good">passed</span>`,
+  failed&&rootErrors.length?`<span class="chip bad">${rootErrors.length} step error${rootErrors.length===1?'':'s'}</span>`:'',
+  !failed&&rootErrors.length?`<span class="chip warn" title="Steps that threw, but the test recovered and passed">${rootErrors.length} recovered error${rootErrors.length===1?'':'s'}</span>`:'',
   `<span class="chip">${steps} steps</span>`,`<span class="chip">${fmtMs(total)}</span>`,
   D.meta.framework?`<span class="chip">${esc(D.meta.framework)}</span>`:'',
-  video?`<span class="chip">video</span>`:''].join('');
-if(errors.length){const b=$('#banner'),e=errors[0];b.hidden=false;
-  b.innerHTML=`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`;
-  b.onclick=b.onkeydown=ev=>{if(ev.type==='click'||ev.key==='Enter')select(EV.indexOf(e))}}
+  segs.length?`<span class="chip">video${segs.length>1?' · '+segs.length+' segments':''}</span>`:''].join('');
+if(failed){const b=$('#banner'),e=finalErr;b.hidden=false;
+  b.innerHTML=e?`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`
+    :`<b>✗ Test failed outside the recorded steps</b><span>${esc(D.meta.failureMessage||'No failure message was reported.')}</span>`;
+  b.onclick=b.onkeydown=ev=>{if(ev.type==='click'||ev.key==='Enter')select(e?EV.indexOf(e):EV.length-1)}}
 
 // timeline + ticks
 const tl=$('#tl'),tip=$('#tip');
 (function ticks(){const target=total/8,p=Math.pow(10,Math.floor(Math.log10(target)));const step=[1,2,5,10].map(m=>m*p).find(s=>s>=target)||p*10;
   let h='';for(let t=0;t<=total;t+=step)h+=`<span style="left:${t/total*100}%">${fmtMs(t).replace(' ','')}</span>`;$('#ticks').innerHTML=h})();
 const items=EV.map((e,i)=>({e,i}));
-items.forEach(it=>{const e=it.e,s=document.createElement('div');s.className='seg '+e.kind;
+items.forEach(it=>{const e=it.e,s=document.createElement('div');s.className='seg '+e.kind+(isRecovered(e)?' recovered':'');
   s.style.left=(off(e)/total*100)+'%';s.style.width=Math.max(.3,(e.durationMs||0)/total*100)+'%';
   s.onclick=ev=>{ev.stopPropagation();select(it.i)};
   s.onmouseenter=()=>{const shot=R[e.screenshotAfter]||R[e.screenshotBefore];
@@ -185,7 +197,7 @@ items.forEach(it=>{const e=it.e,s=document.createElement('div');s.className='seg
   s.onmouseleave=()=>{tip.hidden=true};
   tl.appendChild(s);it.seg=s});
 tl.onclick=ev=>{const r=tl.getBoundingClientRect();const ms=(ev.clientX-r.left)/r.width*total;
-  if(vidEl&&tab==='shots'){vidEl.currentTime=Math.max(0,(t0+ms-Date.parse(video.started))/1000);return}
+  if(vidEl&&tab==='shots'){seekVideo(t0+ms);return}
   let best=0;items.forEach(it=>{if(off(it.e)<=ms)best=it.i});select(best)};
 
 // list with collapsible groups
@@ -195,9 +207,9 @@ items.forEach(it=>{const e=it.e;
     if(e.group){grpEl=document.createElement('div');grpEl.className='grp';const depth=e.group.split(' / ').length-1;
       grpEl.style.paddingLeft=(10+depth*12)+'px';grpEl.innerHTML=`<span class="car">▾</span>${esc(e.group.split(' / ').pop())}`;
       grpEl.dataset.g=e.group;const g=e.group;grpEl.onclick=()=>{closed.has(g)?closed.delete(g):closed.add(g);applyFilter()};list.appendChild(grpEl)}}
-  const d=document.createElement('div');d.className='ev '+e.kind;d.setAttribute('role','option');d.id='ev'+e.seq;
+  const d=document.createElement('div');d.className='ev '+e.kind+(isRecovered(e)?' recovered':'');d.setAttribute('role','option');d.id='ev'+e.seq;
   const icon=e.kind==='error'?'✗':e.kind==='log'?'•':'✓';
-  d.innerHTML=`<span class="st">${icon}</span><span class="n">${esc(e.name)}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target?`<span class="t">${esc(e.target)}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
+  d.innerHTML=`<span class="st">${icon}</span><span class="n">${esc(e.name)}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target||e.causeSeq?`<span class="t">${e.causeSeq?`↳ failed in #${e.causeSeq} `:''}${esc(e.target||'')}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
   d.onclick=()=>select(it.i);list.appendChild(d);it.row=d;it.grp=grpEl});
 
 let mode='all';
@@ -223,13 +235,13 @@ function select(i){if(i<0||i>=items.length)return;
   if(it.grp&&closed.size){[...closed].forEach(g=>{if(e.group===g||(e.group||'').startsWith(g+' / '))closed.delete(g)});applyFilter()}
   it.row.scrollIntoView({block:'nearest'});
   $('#empty').hidden=true;$('#step').hidden=false;
-  const icon=e.kind==='error'?'<span class="err">✗</span>':e.kind==='log'?'<span class="mut">•</span>':'<span style="color:var(--ok)">✓</span>';
+  const icon=isRecovered(e)?'<span style="color:var(--warn)">✗</span>':e.kind==='error'?'<span class="err">✗</span>':e.kind==='log'?'<span class="mut">•</span>':'<span style="color:var(--ok)">✓</span>';
   $('#stephead').innerHTML=`<h2>${icon} ${esc(e.name)} <span class="seq">#${e.seq}</span></h2>
     ${e.target?`<div class="target"><code>${esc(e.target)}</code><button id="cpTarget">Copy</button></div>`:''}
-    <div class="metaline">${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
-    ${e.error?`<div class="errbox">${esc(e.error)}</div>`:''}`;
+    <div class="metaline">${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}${e.captureMs?`<span title="Screenshots and UI snapshot, not included in the duration">Capture ${fmtMs(e.captureMs)}${e.snapshotMs?` (UI tree ${fmtMs(e.snapshotMs)})`:''}</span>`:''}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
+    ${e.error?`<div class="errbox"${isRecovered(e)?' style="color:var(--warn);background:var(--warn-bg)"':''}>${isRecovered(e)?'Recovered: ':''}${esc(e.error)}${e.causeSeq?` <a href="#${e.causeSeq}">(failed in step #${e.causeSeq})</a>`:''}</div>`:''}`;
   copyBtn($('#cpTarget'),e.target);
-  if(vidEl)vidEl.currentTime=Math.max(0,(Date.parse(e.start)-Date.parse(video.started))/1000);
+  seekVideo(Date.parse(e.start));
   $('#cursor').style.left=(off(e)/total*100)+'%';
   history.replaceState(null,'','#'+e.seq);
   renderTab()}
@@ -238,9 +250,30 @@ function copyBtn(b,text){if(!b)return;b.onclick=()=>{const done=()=>{b.textConte
   function fallback(){const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');done()}catch(_){}t.remove()}}}
 
 // One <video> for the whole page, moved into the Screenshots tab on each render so playback position survives.
-let vidEl=null;
-if(video){vidEl=document.createElement('video');vidEl.id='vid';vidEl.src=video.src;vidEl.controls=true;vidEl.preload='metadata';
-  vidEl.ontimeupdate=()=>{const ms=Date.parse(video.started)+vidEl.currentTime*1000-t0;$('#cursor').style.left=Math.min(100,Math.max(0,ms/total*100))+'%'}}
+// With several segments it switches source to the segment that covers the selected moment.
+let vidEl=null,curSeg=null,pendingT=null,vidMsg='';
+const mime=f=>/\.webm$/i.test(f)?'video/webm':/\.mkv$/i.test(f)?'video/x-matroska':'video/mp4';
+function segUrl(sg){if(sg.url)return sg.url;
+  if(sg.v.embedded){const bin=atob(R[sg.v.embedded]),a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
+    sg.url=URL.createObjectURL(new Blob([a],{type:mime(sg.v.file)}))}
+  else sg.url=sg.v.src;
+  return sg.url}
+function segAt(abs){let best=null;for(const sg of segs)if(sg.start<=abs+250)best=sg;
+  if(best&&best.dur!=null&&abs>best.start+best.dur*1000+250)return null;return best}
+function setVidMsg(m){vidMsg=m;const c=$('#vidnote');if(c)c.textContent=m}
+function seekVideo(abs){if(!vidEl)return;const sg=segAt(abs);
+  if(!sg){vidEl.pause();setVidMsg(segs.length>1?'No recording at this moment (between segments).':'No recording at this moment.');return}
+  setVidMsg('');const t=Math.max(0,(abs-sg.start)/1000);
+  if(curSeg!==sg){curSeg=sg;pendingT=t;vidEl.src=segUrl(sg)}else vidEl.currentTime=t}
+if(segs.length){vidEl=document.createElement('video');vidEl.id='vid';vidEl.controls=true;vidEl.preload='metadata';
+  vidEl.onloadedmetadata=()=>{const sg=curSeg;if(!sg)return;
+    if(sg.dur==null&&isFinite(vidEl.duration))sg.dur=vidEl.duration;
+    // Served over HTTP without range requests the video is not seekable: load it whole as a Blob instead.
+    if(!sg.v.embedded&&!sg.blob&&/^https?:/.test(location.protocol)&&(vidEl.seekable.length===0||vidEl.seekable.end(0)===0)){
+      sg.blob=true;const keep=pendingT??vidEl.currentTime;
+      fetch(sg.url).then(r=>r.blob()).then(b=>{sg.url=URL.createObjectURL(b);pendingT=keep;vidEl.src=sg.url}).catch(()=>{});return}
+    if(pendingT!=null){vidEl.currentTime=pendingT;pendingT=null}};
+  vidEl.ontimeupdate=()=>{if(!curSeg)return;const ms=curSeg.start+vidEl.currentTime*1000-t0;$('#cursor').style.left=Math.min(100,Math.max(0,ms/total*100))+'%'}}
 
 function renderTab(){const e=items[cur].e,body=$('#tabbody');
   const counts={logs:EV.filter(x=>x.kind==='log').length,tree:e.snapshot&&R[e.snapshot]?1:0};
@@ -254,9 +287,9 @@ function renderTab(){const e=items[cur].e,body=$('#tabbody');
 
 // screenshots + lightbox
 let lb=[],lbi=0;
-function shotsTab(e,body){const shots=[['Before',e.screenshotBefore],['After',e.screenshotAfter]].filter(([,k])=>k&&R[k]);
-  if(!shots.length&&!vidEl){body.innerHTML=`<p class="note">${e.kind==='log'?'Log entries have no screenshots.':'No screenshots for this step. Check that the trace source can take screenshots and that TraceOptions.Screenshots is on.'}</p>`;return}
-  body.innerHTML=`<div class="shots">${shots.map(([l,k],j)=>`<figure><figcaption>${l}</figcaption><img src="${R[k]}" data-j="${j}" alt="${l} screenshot"></figure>`).join('')}${vidEl?'<figure id="vidfig"><figcaption>Screen recording (synced to this step)</figcaption></figure>':''}</div>`;
+function shotsTab(e,body){const shots=(e.kind==='log'?[['Screenshot',e.screenshotAfter]]:[['Before',e.screenshotBefore],['After',e.screenshotAfter]]).filter(([,k])=>k&&R[k]);
+  if(!shots.length&&!vidEl){body.innerHTML=`<p class="note">${e.kind==='log'?'This log entry has no screenshot. Use rec.Log(message, screenshot: true) to add one.':'No screenshots for this step. It was recorded with Capture.None, or the trace source could not take screenshots (see the Logs tab).'}</p>`;return}
+  body.innerHTML=`<div class="shots">${shots.map(([l,k],j)=>`<figure><figcaption>${l}</figcaption><img src="${R[k]}" data-j="${j}" alt="${l} screenshot"></figure>`).join('')}${vidEl?`<figure id="vidfig"><figcaption>Screen recording (synced to this step) <span class="vidnote" id="vidnote">${esc(vidMsg)}</span></figcaption></figure>`:''}</div>`;
   if(vidEl)$('#vidfig').appendChild(vidEl);
   body.querySelectorAll('img').forEach(img=>img.onclick=()=>openLb(shots.map(([l,k])=>({cap:`${l} · #${e.seq} ${e.name}`,src:R[k]})),+img.dataset.j))}
 function openLb(list,j){lb=list;lbi=j;$('#lightbox').hidden=false;showLb()}
@@ -280,9 +313,11 @@ function logsTab(e,body){const logs=items.filter(it=>it.e.kind==='log');
 function infoTab(body){const m=D.meta;
   body.innerHTML=`<table class="kv"><tr><td>Title</td><td>${esc(m.title)}</td></tr><tr><td>Framework</td><td>${esc(m.framework||'—')}</td></tr>
     <tr><td>Started</td><td>${esc(new Date(m.started).toLocaleString())}</td></tr><tr><td>Stopped</td><td>${m.stopped?esc(new Date(m.stopped).toLocaleString()):'—'}</td></tr>
-    <tr><td>Duration</td><td>${fmtMs(total)}</td></tr><tr><td>Steps</td><td>${steps} (${errors.length} failed)</td></tr>
+    <tr><td>Duration</td><td>${fmtMs(total)}</td></tr><tr><td>Outcome</td><td>${failed?'<span class="err">failed</span>':'passed'}${D.meta.outcome?'':' (from step errors; outcome not reported)'}</td></tr>
+    ${D.meta.failureMessage?`<tr><td>Failure message</td><td class="mono">${esc(D.meta.failureMessage)}</td></tr>`:''}
+    <tr><td>Steps</td><td>${steps} (${rootErrors.length} with errors${!failed&&rootErrors.length?', recovered':''})</td></tr>
     <tr><td>Log entries</td><td>${EV.length-steps}</td></tr><tr><td>Machine</td><td>${esc(m.machine||'—')}</td></tr><tr><td>OS</td><td>${esc(m.os||'—')}</td></tr>
-    <tr><td>Video</td><td>${video?esc(video.file):'—'}</td></tr><tr><td>Format version</td><td>${esc(m.formatVersion)}</td></tr></table>`}
+    <tr><td>Video</td><td>${segs.length?segs.map(sg=>esc(sg.v.file)+(sg.v.embedded?' (embedded)':'')).join('<br>'):'—'}</td></tr><tr><td>Format version</td><td>${esc(m.formatVersion)}</td></tr></table>`}
 
 // UI tree with screenshot picker
 function rectOf(n){const a=k=>n.getAttribute(k);
@@ -297,6 +332,7 @@ function locators(n){const a=k=>n.getAttribute(k)||'',q=s=>s.replace(/\\/g,'\\\\
   if(attr)out.push([`By.XPath("//${n.tagName}[@${attr[0]}=${q(x(attr[1]))}]")`,'slow on WinAppDriver']);
   return out}
 function treeTab(e,body){const text=e.snapshot&&R[e.snapshot];
+  if(!text&&e.causeSeq){body.innerHTML=`<p class="note">This step failed because step <a href="#${e.causeSeq}">#${e.causeSeq}</a> failed. The UI tree was captured there, once.</p>`;return}
   if(!text){body.innerHTML=`<p class="note">No UI snapshot for this step. By default WinTrace captures the UI tree only when a step fails, because it can be slow on WinAppDriver. Set <code>TraceOptions.Snapshots = SnapshotMode.Always</code> to capture it for every step.</p>`;return}
   const doc=e.snapshot.endsWith('.xml')?new DOMParser().parseFromString(text,'application/xml'):null;
   if(!doc||doc.querySelector('parsererror')){body.innerHTML=`<pre>${esc(text)}</pre>`;return}
@@ -369,7 +405,7 @@ document.addEventListener('keydown',ev=>{
 // initial selection: #seq in the URL, else the first failure, else the first step
 applyFilter();
 const fromHash=items.find(it=>'#'+it.e.seq===location.hash);
-const firstErr=items.find(it=>it.e.kind==='error');
+const firstErr=finalErr?items.find(it=>it.e===finalErr):failed?items[items.length-1]:null;
 if(items.length)select((fromHash||firstErr||items[0]).i);
 addEventListener('hashchange',()=>{const it=items.find(x=>'#'+x.e.seq===location.hash);if(it&&it.i!==cur)select(it.i)});
 })();

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -13,16 +14,19 @@ const string Usage = @"wintrace - inspect WinTrace traces
       Build the HTML report and open it.
 
   wintrace summary <trace.zip> [--json]
-      List steps and errors. Exit code 1 if any step failed.
+      List steps and the test outcome. Exit code 1 if the test failed.
 
-  wintrace inspect <trace.zip> [--step <n>] [--tree] [--extract <dir>] [--json]
-      Details of one step (default: the first failed step, else the last one): error, stack trace,
-      parameters, UI elements similar to a failed locator, and the UI tree (--tree).
-      --extract saves the step's screenshots as PNG files and prints their paths.
+  wintrace inspect <trace.zip> [--step <n>] [--tree] [--extract <dir> [--all]] [--json]
+      Details of one step (default: the step where the test failed): error, stack trace, parameters,
+      UI elements similar to the locator that failed, and the UI tree (--tree).
+      --extract saves the step's screenshots and prints their paths; with --all, those of every step.
 
   wintrace --version
 
 Text output is meant for people, CI logs and AI agents; --json is stable for scripts.";
+
+// Dots as decimal separators whatever the OS language, so output is easy to parse.
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
 if (args.Length == 0 || args[0] is "-h" or "--help") { Console.WriteLine(Usage); return args.Length == 0 ? 1 : 0; }
 if (args[0] == "--version")
@@ -90,9 +94,16 @@ int WithTrace(Func<LoadedTrace, int> body)
 
 double Offset(LoadedTrace t, TraceEvent e) => (e.Start - t.Meta.Started).TotalSeconds;
 
+// Step errors that are not just the same failure propagating out of a nested step.
+List<TraceEvent> RootErrors(LoadedTrace t) => t.Events.Where(e => e.Kind == "error" && e.CauseSeq == null).ToList();
+
+// The outcome reported by the test framework; traces without one fall back to "any step failed".
+bool TestFailed(LoadedTrace t) => t.Meta.Outcome != null ? t.Meta.Outcome == "failed" : RootErrors(t).Count > 0;
+
 int Summary(LoadedTrace t)
 {
-    var failed = t.Events.Count(e => e.Kind == "error");
+    var failed = TestFailed(t);
+    var errors = RootErrors(t);
     if (json)
     {
         Console.WriteLine(JsonSerializer.Serialize(new
@@ -100,27 +111,37 @@ int Summary(LoadedTrace t)
             title = t.Meta.Title,
             framework = t.Meta.Framework,
             started = t.Meta.Started,
-            passed = failed == 0,
-            failedSteps = failed,
+            outcome = failed ? "failed" : "passed",
+            outcomeReported = t.Meta.Outcome != null,
+            failureMessage = t.Meta.FailureMessage,
+            passed = !failed,
+            failedSteps = failed ? errors.Count : 0,
+            recoveredErrors = failed ? 0 : errors.Count,
             steps = t.Events.Select(e => new
             {
-                e.Seq, e.Kind, e.Name, e.Target, e.Group,
+                e.Seq, e.Kind, e.Name, e.Target, e.Group, e.CauseSeq,
                 offsetSeconds = Math.Round(Offset(t, e), 3),
                 durationMs = Math.Round(e.DurationMs, 1),
+                captureMs = e.CaptureMs is double c ? Math.Round(c, 1) : (double?)null,
+                snapshotMs = e.SnapshotMs is double sn ? Math.Round(sn, 1) : (double?)null,
                 e.Error
             })
         }, jsonOptions));
-        return failed > 0 ? 1 : 0;
+        return failed ? 1 : 0;
     }
 
-    Console.WriteLine($"{t.Meta.Title}  ({t.Events.Count} events, {failed} errors)");
+    var verdict = failed ? "FAILED" : errors.Count > 0 ? $"PASSED ({errors.Count} recovered step error(s))" : "PASSED";
+    Console.WriteLine($"{t.Meta.Title}  {verdict}  ({t.Events.Count} events)");
+    if (failed && t.Meta.FailureMessage != null) Console.WriteLine("Failure: " + t.Meta.FailureMessage);
     foreach (var e in t.Events)
     {
-        Console.WriteLine($"{(e.Kind == "error" ? "FAIL" : e.Kind == "log" ? "log " : "ok  ")} #{e.Seq,-3} +{Offset(t, e),7:F2}s {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {e.Name} {e.Target}");
-        if (e.Error != null) Console.WriteLine("       " + e.Error);
+        var status = e.Kind == "log" ? "log " : e.Kind != "error" ? "ok  " : failed ? "FAIL" : "rcvd";
+        var capture = e.CaptureMs is double c && c >= 1000 ? $"  (capture {c / 1000:F1}s)" : "";
+        Console.WriteLine($"{status} #{e.Seq,-3} +{Offset(t, e),7:F2}s {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {e.Name} {e.Target}{capture}");
+        if (e.Error != null) Console.WriteLine("       " + (e.CauseSeq is int cause ? $"(failed in #{cause}) " : "") + e.Error);
     }
-    if (failed > 0) Console.WriteLine($"\nDetails of the first failure: wintrace inspect \"{args[1]}\"");
-    return failed > 0 ? 1 : 0;
+    if (failed) Console.WriteLine($"\nDetails of the failure: wintrace inspect \"{args[1]}\"");
+    return failed ? 1 : 0;
 }
 
 int Inspect(LoadedTrace t)
@@ -136,11 +157,22 @@ int Inspect(LoadedTrace t)
             return 2;
         }
     }
-    else e = t.Events.FirstOrDefault(x => x.Kind == "error") ?? t.Events.Last(x => x.Kind != "log");
+    else
+    {
+        // The step where the test failed: the last step error (nested failures report their innermost step);
+        // a passed test shows its first recovered error, else the last step.
+        var errors = RootErrors(t);
+        e = TestFailed(t) ? errors.LastOrDefault() : errors.FirstOrDefault();
+        e ??= t.Events.LastOrDefault(x => x.Kind != "log") ?? t.Events.Last();
+    }
 
+    var failedOutsideSteps = TestFailed(t) && RootErrors(t).Count == 0;
+    // A step that failed because a nested step failed shares that step's capture.
+    var captured = e.CauseSeq is int causeSeq ? t.Events.FirstOrDefault(x => x.Seq == causeSeq) ?? e : e;
     string? Text(string? id) => id != null && t.Resources.TryGetValue(id, out var b) ? System.Text.Encoding.UTF8.GetString(b) : null;
-    var snapshot = Text(e.Snapshot);
-    var similar = e.Kind == "error" ? TraceAnalysis.FindSimilar(snapshot, e.Target) : Array.Empty<SimilarElement>();
+    var snapshot = Text(captured.Snapshot);
+    var locator = e.Kind == "error" ? TraceAnalysis.GuessLocator(captured, t.Events) : null;
+    var similar = locator != null ? TraceAnalysis.FindSimilar(snapshot, locator) : Array.Empty<SimilarElement>();
     var elements = TraceAnalysis.ParseTree(snapshot);
 
     var extracted = new List<string>();
@@ -148,23 +180,30 @@ int Inspect(LoadedTrace t)
     if (extractDir != null)
     {
         Directory.CreateDirectory(extractDir);
-        foreach (var (label, id) in new[] { ("before", e.ScreenshotBefore), ("after", e.ScreenshotAfter) })
-        {
-            if (id == null || !t.Resources.TryGetValue(id, out var png)) continue;
-            var path = Path.GetFullPath(Path.Combine(extractDir, $"step{e.Seq}-{label}.png"));
-            File.WriteAllBytes(path, png);
-            extracted.Add(path);
-        }
+        foreach (var step in args.Contains("--all") ? t.Events : (IEnumerable<TraceEvent>)new[] { e })
+            foreach (var (label, id) in new[] { (step.Kind == "log" ? "screenshot" : "before", step.ScreenshotBefore ?? (step.Kind == "log" ? step.ScreenshotAfter : null)), ("after", step.Kind == "log" ? null : step.ScreenshotAfter) })
+            {
+                if (id == null || !t.Resources.TryGetValue(id, out var image)) continue;
+                var path = Path.GetFullPath(Path.Combine(extractDir, $"step{step.Seq}-{label}{Path.GetExtension(id)}"));
+                File.WriteAllBytes(path, image);
+                extracted.Add(path);
+            }
     }
 
     if (json)
     {
         Console.WriteLine(JsonSerializer.Serialize(new
         {
-            e.Seq, e.Kind, e.Name, e.Target, e.Group,
+            e.Seq, e.Kind, e.Name, e.Target, e.Group, e.CauseSeq,
+            testOutcome = TestFailed(t) ? "failed" : "passed",
+            failedOutsideSteps,
+            failureMessage = t.Meta.FailureMessage,
             offsetSeconds = Math.Round(Offset(t, e), 3),
             durationMs = Math.Round(e.DurationMs, 1),
-            e.Params, e.Error, e.ErrorDetail,
+            captureMs = e.CaptureMs is double c ? Math.Round(c, 1) : (double?)null,
+            snapshotMs = captured.SnapshotMs is double sn ? Math.Round(sn, 1) : (double?)null,
+            e.Params, e.Error, errorDetail = captured.ErrorDetail,
+            locator,
             hasScreenshotBefore = e.ScreenshotBefore != null,
             hasScreenshotAfter = e.ScreenshotAfter != null,
             extractedScreenshots = extracted,
@@ -178,22 +217,30 @@ int Inspect(LoadedTrace t)
         return 0;
     }
 
-    Console.WriteLine($"Step #{e.Seq} {e.Name}{(e.Kind == "error" ? "  [FAILED]" : "")}");
+    if (failedOutsideSteps)
+        Console.WriteLine("The test failed outside the recorded steps" + (t.Meta.FailureMessage != null ? ": " + t.Meta.FailureMessage : ".")
+            + "\nShowing the last recorded step.\n");
+    var verdictLabel = e.Kind != "error" ? "" : TestFailed(t) ? "  [FAILED]" : "  [RECOVERED]";
+    Console.WriteLine($"Step #{e.Seq} {e.Name}{verdictLabel}");
     if (e.Target != null) Console.WriteLine($"Target:   {e.Target}");
     if (e.Group != null) Console.WriteLine($"Group:    {e.Group}");
-    Console.WriteLine($"Time:     +{Offset(t, e):F2}s, took {e.DurationMs:F0} ms");
+    Console.WriteLine($"Time:     +{Offset(t, e):F2}s, took {e.DurationMs:F0} ms"
+        + (e.CaptureMs is double cap ? $" (+{cap:F0} ms capture{(e.SnapshotMs is double snap ? $", UI tree {snap:F0} ms" : "")})" : ""));
     foreach (var p in e.Params) Console.WriteLine($"Param:    {p.Key} = {p.Value}");
     if (e.Error != null) Console.WriteLine($"Error:    {e.Error}");
-    if (e.ErrorDetail != null) Console.WriteLine("\nStack trace:\n" + e.ErrorDetail);
+    if (e.CauseSeq != null) Console.WriteLine($"Cause:    failed in nested step #{e.CauseSeq} (details and capture below are from that step)");
+    if (captured.ErrorDetail != null) Console.WriteLine("\nStack trace:\n" + captured.ErrorDetail);
 
     if (similar.Count > 0)
     {
-        Console.WriteLine($"\nUI elements similar to \"{TraceAnalysis.LocatorValue(e.Target)}\" (possible typo or renamed element):");
+        Console.WriteLine($"\nUI elements similar to \"{TraceAnalysis.LocatorValue(locator)}\" (possible typo or renamed element):");
         foreach (var s in similar)
             Console.WriteLine($"  {s.Score * 100:F0}%  {s.Element.Describe()}  ->  {s.Element.SuggestedLocator()}");
     }
     else if (e.Kind == "error" && elements.Count > 0)
-        Console.WriteLine($"\nNo UI element resembles \"{TraceAnalysis.LocatorValue(e.Target)}\". The element may not exist yet (add a wait) or be in another window.");
+        Console.WriteLine(locator == null
+            ? "\nNo locator was recorded for this step. Pass the locator as the step target, e.g. Step(\"click\", by.ToString(), ...), to get suggestions."
+            : $"\nNo UI element resembles \"{TraceAnalysis.LocatorValue(locator)}\". The element may not exist yet (add a wait) or be in another window.");
 
     Console.WriteLine();
     Console.WriteLine(e.ScreenshotBefore != null || e.ScreenshotAfter != null

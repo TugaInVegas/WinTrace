@@ -11,11 +11,13 @@ Facts an agent needs:
 - Core API: `new TraceSession(testName, new AppiumTraceSource(() => driver))` in test setup;
   `session.Finish(testFailed, attachCallback)` in teardown; steps via `session.Recorder`
   (`Find`, `FindAll`, `Click`, `SendKeys`, `Clear`, `Step(name, target, () => ...)`, `Log`, `Group`).
-- Only explicit steps are recorded. Wrap the project's central interaction helpers or page-object methods.
+- Only explicit steps are recorded. Wrap the project's central interaction helpers or page-object methods, or use the
+  drop-in Appium extensions `ClickTraced`, `SendKeysTraced`, `FindElementTraced` (record on `TraceRecorder.Current`).
+- Use `Step(name, target, Capture.None, ...)` for frequent probes/polls; pass the real test outcome to `Finish`.
 - Traces are saved only for failed tests, to `TestResults/WinTrace/<test>_<time>_failed.zip` (+ `.html`).
 - Keep `TraceOptions.Snapshots = SnapshotMode.OnError` (default): UI tree capture can take tens of seconds.
 - Read a trace without a browser: `wintrace summary <zip> [--json]`,
-  `wintrace inspect <zip> [--step N] [--tree] [--extract <dir>] [--json]` (shows the failure, stack trace,
+  `wintrace inspect <zip> [--step N] [--tree] [--extract <dir> [--all]] [--json]` (shows the failure, stack trace,
   similar UI elements for a failed locator, and saves screenshots as PNG).
 
 ## Docs
@@ -23,6 +25,7 @@ Facts an agent needs:
 - [Integration guide for AI agents](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/ai-agents.md): step-by-step recipe to add WinTrace to a test project, and how to debug failures from traces.
 - [Getting started](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/getting-started.md): MSTest, NUnit, xUnit setup and CI publishing.
 - [Configuration](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/configuration.md): TraceOptions, TraceSession, video, performance, privacy.
+- [API stability](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/stability.md): what will not change before 1.0.
 - [Trace format](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/trace-format.md): contents of trace.zip.
 - [Troubleshooting](https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/troubleshooting.md)
 

@@ -136,9 +136,14 @@ public class VideoAndReaderTests
         Assert.Equal(new byte[] { 9, 9, 9 }, File.ReadAllBytes(loaded.VideoFiles["video/screen.mp4"]));
 
         var htmlPath = Path.Combine(dir, "out", "r.html");
-        TraceHtmlExporter.Write(htmlPath, loaded.Meta, loaded.Events, id => null, loaded.VideoFiles);
+        TraceHtmlExporter.Write(htmlPath, loaded.Meta, loaded.Events, id => null, loaded.VideoFiles, embedVideo: false);
         Assert.Contains("\"src\":\"r_files/screen.mp4\"", File.ReadAllText(htmlPath));
         Assert.True(File.Exists(Path.Combine(dir, "out", "r_files", "screen.mp4")));
+
+        var embeddedPath = Path.Combine(dir, "out", "e.html");
+        TraceHtmlExporter.Write(embeddedPath, loaded.Meta, loaded.Events, id => null, loaded.VideoFiles);
+        Assert.Contains("\"video/screen.mp4\":\"CQkJ\"", File.ReadAllText(embeddedPath));
+        Assert.False(Directory.Exists(Path.Combine(dir, "out", "e_files")));
     }
 
     [Fact]

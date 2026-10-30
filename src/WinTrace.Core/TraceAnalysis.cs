@@ -100,6 +100,47 @@ namespace WinTrace
             return v.Trim().Trim('"', '\'', '[', ']').Trim();
         }
 
+        static readonly System.Text.RegularExpressions.Regex[] LocatorPatterns =
+        {
+            // Selenium/Appium By.ToString(): "By.AccessibilityId: btnSave", "By.Name: Save"
+            new System.Text.RegularExpressions.Regex(@"By\.\w+:\s*[^\r\n\)\]]+"),
+            // WebDriver JSON wire: using=name, value=Save
+            new System.Text.RegularExpressions.Regex(@"using\W+(?<u>[\w ]+)\W+value\W+(?<v>[^""\r\n,}]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            // Plain "accessibility id=btnSave", "name: Save", "AutomationId='btnSave'"
+            // (unquoted values end at whitespace; quoted ones may contain spaces)
+            new System.Text.RegularExpressions.Regex(@"\b(accessibility ?id|automationid|class ?name|name|xpath)\s*[=:]\s*(?:['""](?<v>[^'""\r\n]+)['""]|(?<v>[^\s'"",;]+))", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+        };
+
+        /// <summary>
+        /// The locator a failed step was looking for: its target, else one found in the error text, else in the log
+        /// lines just before it. Null when none can be found.
+        /// </summary>
+        public static string? GuessLocator(TraceEvent step, IEnumerable<TraceEvent>? earlierEvents = null)
+        {
+            if (!string.IsNullOrWhiteSpace(step.Target)) return step.Target;
+            var fromError = LocatorIn(step.ErrorDetail ?? step.Error);
+            if (fromError != null) return fromError;
+            if (earlierEvents == null) return null;
+            foreach (var log in earlierEvents.Where(e => e.Seq < step.Seq && e.Kind == "log").OrderByDescending(e => e.Seq).Take(5))
+            {
+                var found = LocatorIn(log.Name);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        static string? LocatorIn(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            foreach (var re in LocatorPatterns)
+            {
+                var m = re.Match(text);
+                if (!m.Success) continue;
+                return m.Groups["v"].Success ? m.Groups["v"].Value.Trim() : m.Value.Trim();
+            }
+            return null;
+        }
+
         /// <summary>
         /// Elements whose AutomationId or Name resemble the locator in <paramref name="target"/>, best first.
         /// Use it on a failed find to spot typos and renamed elements.

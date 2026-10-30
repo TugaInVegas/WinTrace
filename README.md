@@ -86,6 +86,7 @@ stack trace and UI elements similar to a locator that was not found; `--json`, `
 | [Using the viewer](https://github.com/TugaInVegas/WinTrace/blob/main/docs/viewer.md) | Timeline, tabs, UI tree picker, keyboard shortcuts, sharing links |
 | [Configuration](https://github.com/TugaInVegas/WinTrace/blob/main/docs/configuration.md) | `TraceOptions`, `TraceSession`, video, privacy and performance tuning |
 | [Writing an adapter](https://github.com/TugaInVegas/WinTrace/blob/main/docs/adapters.md) | Support another tool (e.g. FlaUI) in two methods |
+| [API stability](https://github.com/TugaInVegas/WinTrace/blob/main/docs/stability.md) | What will not change before 1.0, and how versions are numbered |
 | [Trace format](https://github.com/TugaInVegas/WinTrace/blob/main/docs/trace-format.md) | What is inside `trace.zip`, for tools that read it |
 | [Troubleshooting](https://github.com/TugaInVegas/WinTrace/blob/main/docs/troubleshooting.md) | Slow snapshots, missing screenshots, video out of sync, highlight offset |
 

@@ -7,9 +7,9 @@ A trace is a zip file. The format is versioned by `formatVersion` in `trace.json
 trace.zip
 ├── trace.json          metadata
 ├── events.ndjson       one JSON event per line, ordered by seq
-├── resources/<sha1>.png   screenshots, named by content hash (identical screenshots stored once)
+├── resources/<sha1>.png   screenshots (.png, or .jpg when compressed), named by content hash (stored once)
 ├── snapshots/<sha1>.xml   UI trees (.json or .txt when not XML)
-└── video/<name>.mp4       optional screen recording
+└── video/<name>.mp4       optional screen recording, one file per segment
 ```
 
 ## trace.json
@@ -20,7 +20,9 @@ trace.zip
 | `title` | string | Test name or title. |
 | `framework` | string | Free text, e.g. driver name. |
 | `started`, `stopped` | ISO 8601 | Trace start and end (UTC). |
-| `videos` | array | `{ file, started }`: path in the zip and the instant the recording started. |
+| `outcome` | string? | `passed` or `failed` as reported by the test framework; absent in traces where it was not reported. |
+| `failureMessage` | string? | Failure message reported with the outcome. |
+| `videos` | array | Segments: `{ file, started, durationSeconds? }`, the path in the zip, the instant the recording started and its length when known. |
 | `machine`, `os` | string | Where the trace was recorded. |
 
 ## events.ndjson
@@ -37,6 +39,11 @@ trace.zip
 | `group` | string? | Group path, nested groups joined by ` / `. |
 | `error` | string? | `ExceptionType: message`. |
 | `errorDetail` | string? | Full exception text with stack trace. |
-| `screenshotBefore`, `screenshotAfter`, `snapshot` | string? | Paths of resources in the zip. |
+| `screenshotBefore`, `screenshotAfter`, `snapshot` | string? | Paths of resources in the zip. Log entries can have a `screenshotAfter`. |
+| `causeSeq` | int? | The step failed because a nested step (`seq` = this value) failed with the same exception; it shares that step's capture and is not a separate failure. |
+| `captureMs`, `snapshotMs` | number? | Time spent on screenshots and UI tree for this step, and the UI tree part of it. Not included in `durationMs`. |
+
+A test failed when `outcome` is `failed`. For traces without `outcome`, readers should treat the test as failed when
+any event has `kind: error` and no `causeSeq`.
 
 Readers should ignore unknown fields: new fields may be added without changing `formatVersion`.

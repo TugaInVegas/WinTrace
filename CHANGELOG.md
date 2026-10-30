@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.4.0
+
+Based on feedback from a real MSTest + WinAppDriver suite.
+
+### Breaking
+- The test outcome passed to `TraceSession.Finish` now decides whether a test failed. Steps that threw in a passed
+  test are *recovered errors*: they no longer mark the trace as failed nor save it, unless
+  `SaveRecoveredErrors = true`.
+- The HTML report embeds the video by default (`EmbedVideoInHtml`). Set it to `false` for the previous behaviour.
+
+### Added
+- Outcome in the trace (`outcome`, `failureMessage`); the viewer badge, banner, `wintrace summary` and its exit
+  code use it. "Test failed outside the recorded steps" is shown when no step failed.
+- `Finish(testFailed, attach, failureMessage)`.
+- Per-step capture control: `Step(name, target, Capture.None | Screenshots | Full, ...)`; `Log(message, screenshot: true)`.
+- `TraceOptions.SnapshotTimeout`.
+- Capture times per step (`captureMs`, `snapshotMs`) in the trace, viewer and CLI.
+- Video segments: call `AttachVideo` once per file, with an optional duration; the viewer picks the segment for
+  each step and shows gaps.
+- Videos embedded in the HTML, so a single file works as a CI attachment; when not embedded, the video file is
+  also passed to `attach`. Over HTTP without range requests the viewer loads the video as a Blob so it can seek.
+- `AppiumTraceSource.Compression`: `ScreenshotCompression.ToJpeg(quality, maxWidth)` and `ScaleDown(maxWidth)`.
+- `TraceRecorder.Current` (set by `TraceSession`) and drop-in Appium extensions: `ClickTraced`, `SendKeysTraced`,
+  `ClearTraced`, `FindElementTraced`, `FindElementsTraced`, `Traced`.
+- `wintrace inspect`: defaults to the step where the test failed; finds the locator in the error text or recent logs
+  when the step has no target; `--extract <dir> --all` saves every screenshot; shows nested-failure causes.
+- [API stability](docs/stability.md) page.
+
+### Fixed
+- A failure inside nested steps was captured once per level (screenshots, UI tree and error events). It is now
+  captured once; outer steps are marked as failed in that step (`causeSeq`).
+- `wintrace summary` printed times with the OS decimal separator; output now always uses a dot.
+- A passed test's report could show the failure banner.
+
 ## 0.3.0
 
 ### Changed

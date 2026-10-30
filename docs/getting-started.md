@@ -102,7 +102,9 @@ Everything goes through `_trace.Recorder` (a `TraceRecorder`):
 | `rec.SendKeys(element, text)` | A "type" step with the text (hidden for passwords, see below). |
 | `rec.Clear(element)` | A "clear" step. |
 | `rec.Step(name, target, () => ...)` | Any code as a step. Returns the value of the lambda if it has one. |
-| `rec.Log("message")` | A log line on the timeline. |
+| `rec.Step(name, target, Capture.None, () => ...)` | A step that records timing and errors only (for frequent probes). See [Capture](configuration.md#choosing-what-to-capture-per-step). |
+| `rec.Log("message")`, `rec.Log("message", screenshot: true)` | A log line on the timeline, optionally with a screenshot. |
+| `element.ClickTraced()`, `driver.FindElementTraced(by)` ... | Drop-in versions of Appium calls that record on the running test's trace. |
 | `using (rec.Group("Login")) { ... }` | Groups steps in the viewer. Groups can be nested. |
 
 Exceptions are recorded with their stack trace and then rethrown, so your test fails exactly as before.
