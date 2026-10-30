@@ -119,9 +119,9 @@ You do not need to change every call site. Wrap the page-object methods that mat
 public class CustomerFormPage
 {
     readonly TraceRecorder _rec;
-    readonly WindowsDriver _driver;
+    readonly WindowsDriver<WindowsElement> _driver;
 
-    public CustomerFormPage(WindowsDriver driver, TraceRecorder rec) { _driver = driver; _rec = rec; }
+    public CustomerFormPage(WindowsDriver<WindowsElement> driver, TraceRecorder rec) { _driver = driver; _rec = rec; }
 
     public void Submit() => _rec.Step("submit form", "toolbar/Submit", () =>
     {

@@ -66,10 +66,22 @@ public class CustomerFormTests
 A failing run writes `TestResults/WinTrace/<test>_<time>_failed.zip` and a `.html` next to it. Open the
 HTML in any browser.
 
+## Using an AI coding agent?
+
+WinTrace is built to be added and used by coding agents (Claude Code, Copilot, Cursor, Codex...). Ask yours:
+
+> Add WinTrace to this test project. Follow https://raw.githubusercontent.com/TugaInVegas/WinTrace/main/docs/ai-agents.md
+
+Agents can also read traces without a browser: `wintrace inspect <trace.zip>` prints the failed step, the
+stack trace and UI elements similar to a locator that was not found; `--json`, `--tree` and
+`--extract <dir>` give structured output, the UI tree and the screenshots. The repository has an
+[`llms.txt`](https://github.com/TugaInVegas/WinTrace/blob/main/llms.txt), which is also included in each package.
+
 ## Documentation
 
 | Guide | What it covers |
 |---|---|
+| [AI agents](https://github.com/TugaInVegas/WinTrace/blob/main/docs/ai-agents.md) | Recipe for coding agents to integrate WinTrace, and to debug failures from traces |
 | [Getting started](https://github.com/TugaInVegas/WinTrace/blob/main/docs/getting-started.md) | MSTest, NUnit and xUnit setup; page objects; publishing traces from Azure DevOps and GitHub Actions |
 | [Using the viewer](https://github.com/TugaInVegas/WinTrace/blob/main/docs/viewer.md) | Timeline, tabs, UI tree picker, keyboard shortcuts, sharing links |
 | [Configuration](https://github.com/TugaInVegas/WinTrace/blob/main/docs/configuration.md) | `TraceOptions`, `TraceSession`, video, privacy and performance tuning |
@@ -83,7 +95,7 @@ HTML in any browser.
 |---|---|
 | [`WinTrace.Core`](https://www.nuget.org/packages/WinTrace.Core) | Recorder, `TraceSession`, trace format, HTML viewer, ffmpeg recorder. netstandard2.0, no UI-automation dependency. |
 | [`WinTrace.Appium`](https://www.nuget.org/packages/WinTrace.Appium) | `AppiumTraceSource` and traced `Find`, `FindAll`, `Click`, `SendKeys`, `Clear`. |
-| [`WinTrace.Cli`](https://www.nuget.org/packages/WinTrace.Cli) | `wintrace show` (zip → HTML) and `wintrace summary` (console, exit code 1 on failure). |
+| [`WinTrace.Cli`](https://www.nuget.org/packages/WinTrace.Cli) | `wintrace show` (zip → HTML), `summary` and `inspect` (console or `--json`, for CI and AI agents). |
 
 ## Contributing
 
