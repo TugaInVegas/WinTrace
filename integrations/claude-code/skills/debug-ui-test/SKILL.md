@@ -15,12 +15,16 @@ Work from the evidence in the trace before changing code. Do not re-run long UI 
 - List them, newest first: `wintrace list <folder> --failed` (add `--json` for structured output).
 - If `wintrace` is missing: `dotnet tool install -g WinTrace.Cli`.
 
+After a full run with several failures, start with the run report: `wintrace report <folder> --history <archive>`.
+It groups failures by cause and marks each one new, recurring or intermittent; work on one cause at a time.
+
 ## 2. Read the failure
 
 1. Read the `.md` next to the trace: outcome, failing step, error, UI elements similar to the locator that failed,
    the step list and the UI tree at the failure.
 2. Look at the failure screenshot (the image file named like the trace).
-3. For more: `wintrace inspect <zip or folder>`; `--tree` prints the UI tree, `--extract <dir> --all` saves every
+3. Each step records the code that issued it ("called from" in the `.md`, `Called:` in `inspect`): open that file and line.
+4. For more: `wintrace inspect <zip or folder>`; `--tree` prints the UI tree, `--extract <dir> --all` saves every
    step's screenshots, `--step <n>` shows another step, `--json` gives structured output.
 
 ## 3. Decide the cause
@@ -32,6 +36,8 @@ Work from the evidence in the trace before changing code. Do not re-run long UI 
 | "Test failed outside the recorded steps" | Assertion or code outside any step | Read the failure message; the screenshot shows the state before it. |
 | `failed in nested step #N` | The failure happened inside a nested step | Read step #N: its error, stack trace and capture. |
 | No screenshots or UI tree | Driver session was gone | Check the previous step and whether the app crashed. |
+| Environment warning: lock screen / non-interactive / Remote Desktop | The machine, not the test | Report it; do not change test code for it. |
+| `intermittent` in the run report | Flaky test or environment | Compare with the earlier failures' traces before changing waits. |
 | Recovered errors in a passed test | Expected misses (probes, optional dialogs) | Usually nothing to fix. |
 | `[web]` step failed, or `console.error` / `HTTP 5xx` lines just before the failure | The web part (Playwright) failed or left bad state | Read the web step's call log and the browser lines; for DOM details open the Playwright trace from `playwright/` in the zip with `playwright.ps1 show-trace`. |
 

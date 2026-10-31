@@ -129,6 +129,13 @@ Every failed test leaves, next to its `*_failed.zip`:
   locators), stack trace, every step and the UI tree at the failure. **Read this first**; no tool needed.
 - `*_failed.png` (or `.jpg`): the screenshot at the failure, for agents that can read images.
 
+Each step records the code that issued it (`AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`), so
+you can open the right file and line directly. Environment warnings at the top of the `.md` (locked screen,
+non-interactive session) mean the failure is probably not in the test code.
+
+After a full run, start with `wintrace report <folder> --history <archive>`: it groups failures by cause and marks
+each one new, recurring or intermittent. Fix one cause, not ten symptoms.
+
 For more, install the CLI once: `dotnet tool install -g WinTrace.Cli`. Every command takes a trace file **or a
 folder** (it then uses the newest failed trace under it).
 

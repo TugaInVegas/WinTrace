@@ -52,6 +52,27 @@ namespace WinTrace
     /// </summary>
     public static class TraceAnalysis
     {
+        /// <summary>
+        /// Problems in the recorded desktop environment that commonly break UI automation or the viewer's highlights:
+        /// a locked or disconnected desktop, a non-interactive session, display scaling, remote desktop sessions.
+        /// </summary>
+        public static IReadOnlyList<string> EnvironmentWarnings(TraceMetadata meta)
+        {
+            var env = meta.Environment ?? new Dictionary<string, string>();
+            var warnings = new List<string>();
+            string? Get(string k) => env.TryGetValue(k, out var v) ? v : null;
+            foreach (var (key, when) in new[] { ("desktop", "at the start"), ("desktopAtEnd", "at the end") })
+                if (Get(key) is string d && !string.Equals(d, "Default", StringComparison.OrdinalIgnoreCase))
+                    warnings.Add($"The input desktop {when} was \"{d}\" (lock screen or disconnected session): UI automation cannot reach the app, which shows up as \"element not found\" and blank screenshots.");
+            if (Get("interactive") == "no")
+                warnings.Add("The tests ran in a non-interactive session (e.g. a service account): desktop UI tests need an interactive, unlocked desktop.");
+            if (Get("session") == "remote desktop")
+                warnings.Add("The tests ran in a Remote Desktop session: minimizing or disconnecting the RDP window stops rendering for UI automation.");
+            if (Get("scaling") is string s && s != "100%")
+                warnings.Add($"Display scaling was {s}: highlight boxes in the viewer may be offset (locators are not affected).");
+            return warnings;
+        }
+
         /// <summary>Step errors that are not the same failure propagating out of a nested step (no <c>CauseSeq</c>).</summary>
         public static IReadOnlyList<TraceEvent> StepErrors(IEnumerable<TraceEvent> events) =>
             events.Where(e => e.Kind == "error" && e.CauseSeq == null).OrderBy(e => e.Seq).ToList();

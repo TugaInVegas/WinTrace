@@ -161,6 +161,10 @@ Traces are written to `TestResults/WinTrace` by default (change it with the `out
     path: '**/TestResults/WinTrace/*'
 ```
 
+After the run, `wintrace report <folder> --history <archive> --trx <TestResults>` summarizes it: failures grouped by
+cause, marked new, recurring or intermittent, published to the Azure DevOps Summary tab. See
+[Run report](run-report.md).
+
 Each failed test leaves a `.zip`, a self-contained `.html`, a `.md` summary and the failure screenshot. The `.md`
 reads well in CI logs and artifact viewers. With `EmbedVideoInHtml = false`, keep the `.html` together with its
 `<name>_files` folder.

@@ -26,7 +26,7 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 .chip.bad{color:var(--err);border-color:var(--err);background:var(--err-bg)}.chip.good{color:var(--ok)}.chip.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-bg)}
 .spacer{flex:1}.icon{width:30px;padding:3px 0;text-align:center}
 #banner{display:flex;gap:10px;align-items:center;padding:8px 16px;background:var(--err-bg);color:var(--err);border-bottom:1px solid var(--line);cursor:pointer}
-#banner[hidden]{display:none}#banner b{white-space:nowrap}#banner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#banner[hidden]{display:none}#envwarn{padding:6px 16px;background:var(--warn-bg);color:var(--warn);border-bottom:1px solid var(--line);font-size:13px}#envwarn[hidden]{display:none}#banner b{white-space:nowrap}#banner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* timeline */
 #tlwrap{position:relative;padding:4px 16px 8px;border-bottom:1px solid var(--line)}
 #ticks{position:relative;height:16px;font-size:11px;color:var(--mut)}#ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
@@ -110,6 +110,7 @@ kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
  <button class="icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
 </header>
 <div id="banner" hidden role="button" tabindex="0"></div>
+<div id="envwarn" hidden></div>
 <div id="tlwrap"><div id="ticks"></div><div id="tl" aria-label="Timeline"><div id="cursor"></div></div><div id="tip" hidden></div></div>
 <div id="body">
  <aside id="side">
@@ -195,6 +196,10 @@ if(failed){const b=$('#banner'),e=finalErr;b.hidden=false;
   b.innerHTML=e?`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`
     :`<b>✗ Test failed outside the recorded steps</b><span>${esc(D.meta.failureMessage||'No failure message was reported.')}</span>`;
   b.onclick=b.onkeydown=ev=>{if(ev.type==='click'||ev.key==='Enter')select(e?EV.indexOf(e):EV.length-1)}}
+
+// Environment problems that commonly cause UI automation failures (locked screen, non-interactive session...).
+const warnings=D.warnings||[];
+if(warnings.length&&failed){const w=$('#envwarn');w.hidden=false;w.innerHTML=warnings.map(x=>'⚠ '+esc(x)).join('<br>')}
 
 // timeline + ticks
 const tl=$('#tl'),tip=$('#tip');
@@ -338,6 +343,8 @@ function infoTab(body){const m=D.meta;
     ${D.meta.failureMessage?`<tr><td>Failure message</td><td class="mono">${esc(D.meta.failureMessage)}</td></tr>`:''}
     <tr><td>Steps</td><td>${steps} (${rootErrors.length} with errors${!failed&&rootErrors.length?', recovered':''})</td></tr>
     <tr><td>Log entries</td><td>${EV.length-steps}</td></tr><tr><td>Machine</td><td>${esc(m.machine||'—')}</td></tr><tr><td>OS</td><td>${esc(m.os||'—')}</td></tr>
+    ${Object.keys(m.environment||{}).length?Object.entries(m.environment).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join(''):''}
+    ${warnings.map(w=>`<tr><td>Warning</td><td style="color:var(--warn)">${esc(w)}</td></tr>`).join('')}
     <tr><td>Playwright traces</td><td>${(D.meta.playwrightTraces||[]).length?D.meta.playwrightTraces.map(p=>`${esc(p.file)} (${p.actions} actions${p.playwrightVersion?', Playwright '+esc(p.playwrightVersion):''})`).join('<br>'):'—'}</td></tr>
     <tr><td>Video</td><td>${segs.length?segs.map(sg=>esc(sg.v.file)+(sg.v.embedded?' (embedded)':'')).join('<br>'):'—'}</td></tr><tr><td>Format version</td><td>${esc(m.formatVersion)}</td></tr></table>`}
 

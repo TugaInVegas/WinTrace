@@ -50,6 +50,18 @@ file names are removed from the test name.
 | `Snapshots` | `SnapshotMode.OnError` | When to capture the UI tree: `Off`, `OnError` or `Always`. |
 | `SnapshotTimeout` | none | Stop waiting for a UI tree after this long and record the step without it. The driver may still finish the request before it answers the next command. |
 | `RedactParams` | `password`, `secret`, `token` | Case-insensitive words. A matching parameter name or step target hides the values. |
+| `CaptureCallSite` | `true` | Record which code issued each step (`AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`). Needs PDB files next to the test assemblies. |
+| `CallSiteDepth` | `3` | How many of your own frames to keep. |
+| `CaptureEnvironment` | `true` | Record screen, display scaling, Remote Desktop or console session, interactive session and whether the screen was locked, at the start and the end. |
+
+**Call sites.** WinTrace skips its own frames and framework code (`System`, `Microsoft`, `OpenQA`...). Mark your own
+tracing helpers with `[StackTraceHidden]` or `[DebuggerStepThrough]` so the call site starts at the code that
+called them:
+
+```csharp
+[DebuggerStepThrough]   // or [StackTraceHidden]
+public static class DesktopTrace { ... }
+```
 
 ## Choosing what to capture per step
 

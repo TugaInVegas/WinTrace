@@ -19,6 +19,10 @@ Facts an agent needs:
 - Each failed trace has a `.md` report and the failure screenshot next to it: read those first.
 - CLI (each command takes a trace or a folder = newest failed trace): `wintrace list <folder> [--failed] [--json]`,
   `wintrace summary <zip|folder> [--json]`, `wintrace inspect <zip|folder> [--step N] [--tree] [--extract <dir> [--all]] [--markdown] [--json]`.
+- After a run: `wintrace report <folder> [--history <dir with one subfolder per earlier run>] [--trx <file|dir>] [--json]`
+  groups failures by cause and marks them new / recurring / intermittent (Azure DevOps Summary tab with --azdo).
+- Steps record their call site (`AuxMethods.cs:120 ← Tests.cs:42`) and the trace records environment warnings
+  (lock screen, non-interactive session, Remote Desktop, scaling).
 - Locators for new tests come from the running app: `wintrace snapshot --window "<title>" [--find <text>] [--json]`
   (WinAppDriver; Appium 2 / NovaWindows: `--url ... --automation-name NovaWindows`). Never guess locators.
 - Playwright: `session.Recorder.ImportPlaywrightTrace(path)` after `Tracing.StopAsync(new() { Path = path })` merges web

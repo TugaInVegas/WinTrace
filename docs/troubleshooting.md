@@ -8,6 +8,20 @@ use `Capture.None` for probes that are expected to miss (each failed probe would
 On WinAppDriver a snapshot of a large WPF tree can take tens of seconds. Then see
 [Performance](configuration.md#performance) for screenshots and labels.
 
+## Environment warnings ("lock screen", "non-interactive", "Remote Desktop")
+
+The trace records the desktop the tests ran on and warns about conditions that commonly break desktop UI
+automation:
+
+- **Locked screen or disconnected session** (input desktop not "Default"): UI automation cannot reach the app;
+  failures look like "element not found" and screenshots are blank. Keep the test machine unlocked (disable the
+  screen saver and lock policy for the test account) and do not disconnect its session.
+- **Non-interactive session** (for example a Windows service account): run the agent as a normal user with an
+  interactive, logged-in desktop.
+- **Remote Desktop**: minimizing or disconnecting the RDP window stops rendering. Keep it open, or run the agent
+  on the console session.
+- **Display scaling not 100%**: only the viewer's highlight boxes may be offset.
+
 ## No screenshots in the trace
 
 - The driver session must support screenshots (`ITakesScreenshot`). The **Logs** tab shows

@@ -14,6 +14,12 @@ const string Usage = @"wintrace - inspect WinTrace traces and live Windows UI
   wintrace list [<folder>] [--failed] [--limit <n>] [--json]
       Traces under a folder (default: current), newest first, with outcome and failing step.
 
+  wintrace report [<folder>] [--history <dir>] [--trx <file|dir>] [--out <file.md>] [--azdo] [--json]
+      Run summary: failures grouped by cause, each marked new / recurring / intermittent against earlier
+      runs (one subfolder per run under --history), TRX totals and tests that failed without a trace.
+      Writes wintrace-run-report.md in the folder; --azdo also publishes it to the Azure DevOps run summary
+      (automatic when TF_BUILD is set).
+
   wintrace summary <trace.zip|folder> [--json]
       Steps and the test outcome. Exit code 1 if the test failed.
 
@@ -66,6 +72,7 @@ string? Opt(string name) { var i = Array.IndexOf(args, name); return i >= 0 && i
 if (args[0] == "list") return List();
 if (args[0] == "snapshot") return Snapshot();
 if (args[0] == "merge") return Merge();
+if (args[0] == "report") return Report();
 if (args[0] is not ("show" or "summary" or "inspect")) { Console.Error.WriteLine(Usage); return 2; }
 if (args.Length < 2 || args[1].StartsWith("--")) { Console.Error.WriteLine("Give a trace file or a folder.\n\n" + Usage); return 2; }
 var zip = TraceFiles.Resolve(args[1], out var picked) ?? "";
@@ -161,6 +168,78 @@ int List()
     }
     return 0;
 }
+
+int Report()
+{
+    var folder = Path.GetFullPath(args.Length > 1 && !args[1].StartsWith("--") ? args[1] : ".");
+    if (!Directory.Exists(folder)) { Console.Error.WriteLine($"Folder not found: {folder}"); return 2; }
+    var historyDir = Opt("--history") is string h ? Path.GetFullPath(h) : null;
+    bool Under(string path, string? dir) => dir != null && Path.GetFullPath(path).StartsWith(dir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+
+    var traces = TraceFiles.Find(folder).Where(f => !Under(f.FullName, historyDir)).Select(f => f.FullName).ToList();
+    var history = new List<HistoricRun>();
+    if (historyDir != null)
+    {
+        if (!Directory.Exists(historyDir)) { Console.Error.WriteLine($"History folder not found: {historyDir}"); return 2; }
+        // One subfolder per earlier run, newest first.
+        foreach (var run in new DirectoryInfo(historyDir).GetDirectories().OrderByDescending(d => d.LastWriteTimeUtc))
+        {
+            var hasTrx = Directory.EnumerateFiles(run.FullName, "*.trx", SearchOption.AllDirectories).Any();
+            history.Add(RunReport.ReadHistoricRun(run.Name, TraceFiles.Find(run.FullName).Select(f => f.FullName), hasTrx ? TrxRun.Read(run.FullName) : null));
+        }
+    }
+    var trx = Opt("--trx") is string trxPath ? TrxRun.Read(trxPath) : null;
+    var report = RunReport.Build(folder, traces, history, trx);
+
+    var output = Path.GetFullPath(Opt("--out") ?? Path.Combine(folder, "wintrace-run-report.md"));
+    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+    File.WriteAllText(output, report.ToMarkdown(Path.GetDirectoryName(output)));
+
+    var azdo = args.Contains("--azdo") || string.Equals(Environment.GetEnvironmentVariable("TF_BUILD"), "true", StringComparison.OrdinalIgnoreCase);
+    if (azdo)
+    {
+        // Azure Pipelines logging commands: the report becomes a section of the run's Summary tab.
+        Console.WriteLine($"##vso[task.uploadsummary]{output}");
+        foreach (var e in report.Entries.Where(e => e.Failed && e.History == "new"))
+            Console.WriteLine("##vso[task.logissue type=warning]" + AzdoEscape($"New failure: {e.Title}: {e.FailingStep ?? "outside steps"} — {e.Error}"));
+    }
+
+    if (json)
+    {
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            report = output,
+            traces = report.Entries.Count,
+            failed = report.Entries.Count(e => e.Failed),
+            historyRuns = report.History.Count,
+            trx = report.Trx == null ? null : new { total = report.Trx.Total, passed = report.Trx.Passed, failed = report.Trx.Failed, notRun = report.Trx.NotRun },
+            clusters = report.Clusters.Select(c => new
+            {
+                c.Description,
+                tests = c.Tests.Select(e => new { e.Title, e.History, e.HistoryDetail, e.FailingStep, e.Error, e.Location, trace = e.TracePath, markdown = e.MarkdownPath })
+            }),
+            failedWithoutTrace = report.FailedWithoutTrace,
+            passingAgain = report.Fixed,
+            environmentWarnings = report.Entries.SelectMany(e => e.EnvironmentWarnings).Distinct()
+        }, jsonOptions));
+        return 0;
+    }
+
+    var failed = report.Entries.Where(e => e.Failed).ToList();
+    Console.WriteLine($"{failed.Count} failed test(s) with a trace, {report.Clusters.Count} distinct cause(s)" +
+        (report.History.Count > 0 ? $"; new {failed.Count(e => e.History == "new")}, recurring {failed.Count(e => e.History == "recurring")}, intermittent {failed.Count(e => e.History == "intermittent")}" : ""));
+    foreach (var c in report.Clusters)
+    {
+        Console.WriteLine($"  {c.Tests.Count}x  {c.Description}");
+        foreach (var e in c.Tests) Console.WriteLine($"        {e.Title}  [{e.History}]");
+    }
+    if (report.FailedWithoutTrace.Count > 0) Console.WriteLine($"  Failed without a trace: {string.Join(", ", report.FailedWithoutTrace)}");
+    Console.WriteLine(output);
+    return 0;
+}
+
+// Azure Pipelines logging-command escaping for message text.
+static string AzdoEscape(string s) => s.Replace("%", "%AZP25").Replace("\r", "%0D").Replace("\n", "%0A");
 
 int Merge()
 {
@@ -390,7 +469,9 @@ int Inspect(LoadedTrace t)
             durationMs = Math.Round(e.DurationMs, 1),
             captureMs = e.CaptureMs is double c ? Math.Round(c, 1) : (double?)null,
             snapshotMs = captured.SnapshotMs is double sn ? Math.Round(sn, 1) : (double?)null,
-            e.Params, e.Error, errorDetail = captured.ErrorDetail,
+            e.Params, e.Error, errorDetail = captured.ErrorDetail, e.Location,
+            environment = t.Meta.Environment,
+            environmentWarnings = TraceAnalysis.EnvironmentWarnings(t.Meta),
             locator,
             hasScreenshotBefore = e.ScreenshotBefore != null,
             hasScreenshotAfter = e.ScreenshotAfter != null,
@@ -408,6 +489,7 @@ int Inspect(LoadedTrace t)
     if (failedOutsideSteps)
         Console.WriteLine("The test failed outside the recorded steps" + (t.Meta.FailureMessage != null ? ": " + t.Meta.FailureMessage : ".")
             + "\nShowing the last recorded step.\n");
+    foreach (var w in TraceAnalysis.EnvironmentWarnings(t.Meta)) Console.WriteLine("Environment warning: " + w);
     var verdictLabel = e.Kind != "error" ? "" : TestFailed(t) ? "  [FAILED]" : "  [RECOVERED]";
     Console.WriteLine($"Step #{e.Seq} {e.Name}{verdictLabel}");
     if (e.Target != null) Console.WriteLine($"Target:   {e.Target}");

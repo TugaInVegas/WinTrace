@@ -90,8 +90,13 @@ namespace WinTrace
         public List<TraceVideo> Videos { get; set; } = new List<TraceVideo>();
         /// <summary>Original Playwright traces merged into this one, kept whole so they open in Playwright's own viewer.</summary>
         public List<PlaywrightTraceRef> PlaywrightTraces { get; set; } = new List<PlaywrightTraceRef>();
-        public string Machine { get; set; } = Environment.MachineName;
-        public string Os { get; set; } = Environment.OSVersion.ToString();
+        /// <summary>
+        /// Desktop environment at the start (screen, scaling, session, input desktop...) and <c>desktopAtEnd</c>, when
+        /// known. See <see cref="TraceAnalysis.EnvironmentWarnings"/>.
+        /// </summary>
+        public Dictionary<string, string> Environment { get; set; } = new Dictionary<string, string>();
+        public string Machine { get; set; } = System.Environment.MachineName;
+        public string Os { get; set; } = System.Environment.OSVersion.ToString();
     }
 
     public enum SnapshotMode { Off, OnError, Always }
@@ -110,6 +115,17 @@ namespace WinTrace
         /// The driver may still finish the request in the background before it answers the next command.
         /// </summary>
         public TimeSpan? SnapshotTimeout { get; set; }
+        /// <summary>
+        /// Record which code issued each step (e.g. "AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42"),
+        /// from the call stack, skipping WinTrace, framework code and methods or types marked
+        /// <c>[StackTraceHidden]</c> or <c>[DebuggerStepThrough]</c> (mark your own tracing helpers that way).
+        /// Needs PDB files next to the test assemblies (the default for Debug and Release builds). Default true.
+        /// </summary>
+        public bool CaptureCallSite { get; set; } = true;
+        /// <summary>How many of your own frames to keep in a step's call site (default 3).</summary>
+        public int CallSiteDepth { get; set; } = 3;
+        /// <summary>Record the desktop environment (screen, scaling, session, lock screen) at the start and end (default true).</summary>
+        public bool CaptureEnvironment { get; set; } = true;
         /// <summary>
         /// Case-insensitive substrings. A param whose name matches is replaced with ***; when the step
         /// target matches (e.g. "Password box"), all of that step's params are replaced.

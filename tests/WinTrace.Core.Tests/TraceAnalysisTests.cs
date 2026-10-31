@@ -83,3 +83,45 @@ public class GuessLocatorTests
     [Fact]
     public void Returns_null_when_nothing_found() => Assert.Null(TraceAnalysis.GuessLocator(Step(error: "Timeout")));
 }
+
+public class EnvironmentTests
+{
+    static TraceMetadata Meta(params (string k, string v)[] env)
+    {
+        var m = new TraceMetadata();
+        foreach (var (k, v) in env) m.Environment[k] = v;
+        return m;
+    }
+
+    [Fact]
+    public void Healthy_environment_has_no_warnings() =>
+        Assert.Empty(TraceAnalysis.EnvironmentWarnings(Meta(("desktop", "Default"), ("desktopAtEnd", "Default"), ("interactive", "yes"), ("session", "console"), ("scaling", "100%"))));
+
+    [Fact]
+    public void Lock_screen_non_interactive_rdp_and_scaling_are_reported()
+    {
+        var w = TraceAnalysis.EnvironmentWarnings(Meta(("desktop", "Default"), ("desktopAtEnd", "Winlogon"), ("interactive", "no"), ("session", "remote desktop"), ("scaling", "150%")));
+        Assert.Equal(4, w.Count);
+        Assert.Contains(w, x => x.Contains("at the end") && x.Contains("Winlogon"));
+        Assert.Contains(w, x => x.Contains("non-interactive"));
+        Assert.Contains(w, x => x.Contains("Remote Desktop"));
+        Assert.Contains(w, x => x.Contains("150%"));
+    }
+
+    [Fact]
+    public void Recorder_captures_environment_and_reports_it()
+    {
+        var rec = new TraceRecorder();
+        var env = rec.GetMetadata().Environment;
+        Assert.True(env.ContainsKey(".NET"));
+        Assert.True(env.ContainsKey("interactive"));
+        if (System.OperatingSystem.IsWindows()) Assert.True(env.ContainsKey("desktop") || env.ContainsKey("screen"));
+
+        rec.SetOutcome(true);
+        var md = TraceReport.Markdown(rec.GetMetadata(), rec.Events, _ => null);
+        Assert.Contains("## Environment", md);
+
+        var off = new TraceRecorder(null, new TraceOptions { CaptureEnvironment = false });
+        Assert.Empty(off.GetMetadata().Environment);
+    }
+}

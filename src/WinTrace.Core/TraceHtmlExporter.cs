@@ -84,7 +84,8 @@ namespace WinTrace
                 p.Src = Uri.EscapeUriString(stem + "_files/" + Path.GetFileName(p.File));
                 written.Add(dest);
             }
-            var data = JsonSerializer.Serialize(new { meta, events = evs, resources = res }, opts)
+            var warnings = TraceAnalysis.EnvironmentWarnings(meta);
+            var data = JsonSerializer.Serialize(new { meta, events = evs, resources = res, warnings }, opts)
                 .Replace("</", "<\\/");
 
             string template;

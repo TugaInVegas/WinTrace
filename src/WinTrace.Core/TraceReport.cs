@@ -40,6 +40,7 @@ namespace WinTrace
             if (htmlFile != null) sb.Append("- Viewer: `").Append(htmlFile).AppendLine("` (open in a browser)");
             if (failureImageFile != null) sb.Append("- Screenshot at the failure: `").Append(failureImageFile).AppendLine("`");
             sb.AppendLine();
+            foreach (var w in TraceAnalysis.EnvironmentWarnings(meta)) sb.Append("> **Environment:** ").AppendLine(w).AppendLine();
 
             if (step != null && (failed || errors.Count > 0))
             {
@@ -96,6 +97,13 @@ namespace WinTrace
             }
             if (events.Count > 300) sb.Append("\n... ").Append(events.Count - 300).AppendLine(" more events in the trace.");
             sb.AppendLine();
+
+            if (meta.Environment != null && meta.Environment.Count > 0)
+            {
+                sb.AppendLine("## Environment").AppendLine().AppendLine("| | |").AppendLine("|---|---|");
+                foreach (var kv in meta.Environment) sb.Append("| ").Append(Cell(kv.Key)).Append(" | ").Append(Cell(kv.Value)).AppendLine(" |");
+                sb.Append("| machine | ").Append(Cell(meta.Machine)).AppendLine(" |").Append("| OS | ").Append(Cell(meta.Os)).AppendLine(" |").AppendLine();
+            }
 
             if (meta.PlaywrightTraces.Count > 0)
                 sb.AppendLine("Web steps (`[web]`) come from the Playwright trace(s) stored in the zip under `playwright/`. For DOM snapshots, network and console, extract one and open it with `pwsh bin/<config>/<tfm>/playwright.ps1 show-trace <file>` or https://trace.playwright.dev.").AppendLine();
