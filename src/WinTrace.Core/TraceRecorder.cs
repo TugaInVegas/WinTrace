@@ -46,6 +46,9 @@ namespace WinTrace
                 Framework = _options.Framework,
                 Started = DateTimeOffset.UtcNow
             };
+            if (_options.CaptureEnvironment)
+                try { _meta.Environment = EnvironmentProbe.Capture(); }
+                catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException) { }
         }
 
         /// <summary>
@@ -106,6 +109,7 @@ namespace WinTrace
             {
                 _meta.Outcome = failed ? "failed" : "passed";
                 _meta.FailureMessage = failureMessage;
+                if (_options.CaptureEnvironment && EnvironmentProbe.InputDesktopName() is string desk) _meta.Environment["desktopAtEnd"] = desk;
             }
         }
 
@@ -151,6 +155,7 @@ namespace WinTrace
         {
             var ev = new TraceEvent { Name = name, Target = target, Start = DateTimeOffset.UtcNow };
             lock (_gate) { ev.Seq = ++_seq; ev.Group = CurrentGroup(); }
+            if (_options.CaptureCallSite) ev.Location = CallSite.Describe(_options.CallSiteDepth);
             if (parameters != null)
             {
                 var sensitiveTarget = IsSensitive(target);

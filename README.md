@@ -66,6 +66,13 @@ public class CustomerFormTests
 A failing run writes `TestResults/WinTrace/<test>_<time>_failed.zip` and a `.html` next to it. Open the
 HTML in any browser.
 
+## After the run
+
+`wintrace report <folder> --history <archive> --trx <TestResults>` summarizes a whole run: failures grouped by cause,
+each marked **new**, **recurring** or **intermittent** against earlier runs, TRX totals, environment warnings. Inside
+Azure Pipelines it goes straight to the run's Summary tab. See
+[Run report](https://github.com/TugaInVegas/WinTrace/blob/main/docs/run-report.md).
+
 ## Web + desktop in one trace
 
 Tests that use Playwright for a web app and WinAppDriver for a desktop app can merge the Playwright trace into the
@@ -99,6 +106,7 @@ What agents get:
 | [Getting started](https://github.com/TugaInVegas/WinTrace/blob/main/docs/getting-started.md) | MSTest, NUnit and xUnit setup; page objects; publishing traces from Azure DevOps and GitHub Actions |
 | [Using the viewer](https://github.com/TugaInVegas/WinTrace/blob/main/docs/viewer.md) | Timeline, tabs, UI tree picker, keyboard shortcuts, sharing links |
 | [Configuration](https://github.com/TugaInVegas/WinTrace/blob/main/docs/configuration.md) | `TraceOptions`, `TraceSession`, video, privacy and performance tuning |
+| [Run report](https://github.com/TugaInVegas/WinTrace/blob/main/docs/run-report.md) | Summarize a run: failures by cause, new / recurring / intermittent, Azure DevOps summary |
 | [Combining with Playwright](https://github.com/TugaInVegas/WinTrace/blob/main/docs/playwright.md) | Merge Playwright traces into WinTrace traces, keep the originals for Playwright's viewer |
 | [Writing an adapter](https://github.com/TugaInVegas/WinTrace/blob/main/docs/adapters.md) | Support another tool (e.g. FlaUI) in two methods |
 | [API stability](https://github.com/TugaInVegas/WinTrace/blob/main/docs/stability.md) | What will not change before 1.0, and how versions are numbered |

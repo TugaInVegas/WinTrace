@@ -23,6 +23,7 @@ trace.zip
 | `started`, `stopped` | ISO 8601 | Trace start and end (UTC). |
 | `outcome` | string? | `passed` or `failed` as reported by the test framework; absent in traces where it was not reported. |
 | `failureMessage` | string? | Failure message reported with the outcome. |
+| `environment` | object | Desktop environment: `screen`, `monitors`, `scaling`, `session`, `interactive`, `desktop` (input desktop at the start; `Winlogon` = lock screen) and `desktopAtEnd`, when known. |
 | `playwrightTraces` | array | Merged Playwright traces: `{ file, playwrightVersion?, actions }`. |
 | `videos` | array | Segments: `{ file, started, durationSeconds? }`, the path in the zip, the instant the recording started and its length when known. |
 | `machine`, `os` | string | Where the trace was recorded. |
@@ -43,7 +44,7 @@ trace.zip
 | `errorDetail` | string? | Full exception text with stack trace. |
 | `screenshotBefore`, `screenshotAfter`, `snapshot` | string? | Paths of resources in the zip. Log entries can have a `screenshotAfter`. |
 | `origin` | string? | `web` for events imported from a Playwright trace; absent for WinTrace steps. |
-| `location` | string? | Source location that issued the call (e.g. `LoginTests.cs:42`), when known. |
+| `location` | string? | Source location that issued the call: for WinTrace steps, the user frames innermost first (`AuxMethods.cs:120 ← CustomerTests.cs:42`); for web steps, Playwright's call site. |
 | `causeSeq` | int? | The step failed because a nested step (`seq` = this value) failed with the same exception; it shares that step's capture and is not a separate failure. |
 | `captureMs`, `snapshotMs` | number? | Time spent on screenshots and UI tree for this step, and the UI tree part of it. Not included in `durationMs`. |
 

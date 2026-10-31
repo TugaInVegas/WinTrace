@@ -132,3 +132,40 @@ public class CaptureTests
         Assert.Null(videos[1].DurationSeconds);
     }
 }
+
+public class CallSiteTests
+{
+    static class Helpers
+    {
+        public static void ClickSave(TraceRecorder rec) => rec.Step("click", "Save", () => { });
+
+        [System.Diagnostics.DebuggerStepThrough]
+        public static void HiddenFacade(TraceRecorder rec) => ClickSave(rec);
+    }
+
+    [Fact]
+    public void Steps_record_the_user_code_that_issued_them()
+    {
+        var rec = new TraceRecorder();
+        Helpers.ClickSave(rec);
+        var loc = rec.Events[0].Location;
+        Assert.NotNull(loc);
+        var parts = loc!.Split(" ← ");
+        Assert.StartsWith("CaptureTests.cs:", parts[0]);
+        Assert.True(parts.Length >= 2, loc);
+    }
+
+    [Fact]
+    public void Hidden_helpers_are_skipped_and_the_option_turns_it_off()
+    {
+        var rec = new TraceRecorder();
+        Helpers.HiddenFacade(rec);
+        var lines = rec.Events[0].Location!.Split(" ← ");
+        Assert.Equal(lines.Length, lines.Distinct().Count());
+        Assert.True(lines.Length <= 3);
+
+        var off = new TraceRecorder(null, new TraceOptions { CaptureCallSite = false });
+        Helpers.ClickSave(off);
+        Assert.Null(off.Events[0].Location);
+    }
+}

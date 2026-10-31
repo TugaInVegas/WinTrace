@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+- `wintrace report`: run summary with failures grouped by cause (step, target and normalized error), each marked
+  new, recurring or intermittent against earlier runs (`--history`), TRX totals, tests that failed without a trace and
+  tests passing again (`--trx`), environment warnings and links to each test's summary. `--json`; in Azure Pipelines
+  (`--azdo` or `TF_BUILD`) it is added to the run's Summary tab and new failures become warnings. `RunReport` and
+  `TrxRun` in Core.
+- Call sites for WinTrace steps (`TraceOptions.CaptureCallSite`, `CallSiteDepth`): the user code that issued each step,
+  e.g. `AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`, skipping WinTrace, framework code and helpers
+  marked `[StackTraceHidden]` / `[DebuggerStepThrough]`.
+- Environment diagnostics (`TraceOptions.CaptureEnvironment`): screen, monitors, display scaling, Remote Desktop or
+  console session, interactive session, and the input desktop at the start and end (lock screen detection), with
+  warnings in the viewer, the `.md`, `inspect` and the run report.
+- [Run report](docs/run-report.md) guide.
+
 ## 0.5.0
 
 ### Added
