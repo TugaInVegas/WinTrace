@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using WinTrace;
@@ -167,5 +168,89 @@ public class CallSiteTests
         var off = new TraceRecorder(null, new TraceOptions { CaptureCallSite = false });
         Helpers.ClickSave(off);
         Assert.Null(off.Events[0].Location);
+    }
+}
+
+public class CaptureNoneNestingTests
+{
+    sealed class Counting : ITraceSource
+    {
+        public int Screenshots, Snapshots;
+        public byte[]? CaptureScreenshot() { Screenshots++; return new byte[] { 0x89, 0x50, (byte)Screenshots }; }
+        public string? CaptureSnapshot() { Snapshots++; return "<Window><Button Name=\"Save\" AutomationId=\"btnSave\"/></Window>"; }
+    }
+
+    [Fact]
+    public void Enclosing_step_captures_when_the_failing_probe_is_capture_none()
+    {
+        var src = new Counting();
+        var rec = new TraceRecorder(src, new TraceOptions { ScreenshotBefore = false });
+        Assert.ThrowsAny<Exception>(() =>
+            rec.Step("business", "menu/Open", () =>                                   // default capture
+                rec.Step("middle", null, () =>                                       // default capture
+                    rec.Step("find", "By.AccessibilityId: btnSavee", Capture.None, () => throw new InvalidOperationException("not found")))));
+
+        var find = rec.Events.Single(e => e.Name == "find");
+        var middle = rec.Events.Single(e => e.Name == "middle");
+        var business = rec.Events.Single(e => e.Name == "business");
+        Assert.Null(find.ScreenshotAfter);
+        Assert.NotNull(find.ErrorDetail);
+        Assert.Equal(find.Seq, middle.CauseSeq);
+        Assert.NotNull(middle.Snapshot);                // took over the capture
+        Assert.NotNull(middle.ScreenshotAfter);
+        Assert.Equal(middle.Seq, business.CauseSeq);    // and the next level reuses it
+        Assert.Null(business.Snapshot);
+        Assert.Equal(1, src.Snapshots);
+        Assert.Equal(1, src.Screenshots);
+        Assert.Same(middle, TraceAnalysis.CaptureFor(find, rec.Events));
+        Assert.Same(middle, TraceAnalysis.CaptureFor(business, rec.Events));
+    }
+
+    [Fact]
+    public void Session_report_and_failure_image_use_the_enclosing_capture()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wintrace-none", Guid.NewGuid().ToString("N"));
+        var s = new TraceSession("ProbeInsideBusinessStep", new Counting(), dir) { WriteHtml = false };
+        try { s.Recorder.Step("open", "menu/Open", () => s.Recorder.Step("find", "By.AccessibilityId: btnSavee", Capture.None, () => throw new Exception("not found"))); } catch { }
+        var files = s.Finish(true);
+        Assert.Contains(files, f => f.EndsWith(".png"));
+        var md = File.ReadAllText(files.Single(f => f.EndsWith(".md")));
+        Assert.Contains("captured by the enclosing step #1", md);
+        Assert.Contains("MobileBy.AccessibilityId(\"btnSave\")", md);   // similar elements from the enclosing capture
+    }
+}
+
+public class CallSiteCollapseTests
+{
+    static class Finder
+    {
+        public static void Wait(TraceRecorder rec) => Trace(rec, () => { });
+        static void Trace(TraceRecorder rec, Action body) => rec.Step("find", "x", () => body());
+    }
+
+    [Fact]
+    public void Lambdas_and_repeated_frames_of_one_type_are_collapsed()
+    {
+        var rec = new TraceRecorder();
+        Finder.Wait(rec);
+        var parts = rec.Events[0].Location!.Split(" ← ");
+        Assert.True(parts.Length >= 2, rec.Events[0].Location);
+        Assert.StartsWith("CaptureTests.cs:", parts[0]);
+        Assert.NotEqual(parts[0], parts[1]);
+        // Finder.Trace and Finder.Wait collapse into one frame; the next frame is this test method.
+        var waitLine = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "CaptureTests.cs"))
+            .Select((l, i) => (l, i: i + 1)).First(x => x.l.Contains("public static void Wait(TraceRecorder rec)")).i;
+        Assert.Equal("CaptureTests.cs:" + waitLine, parts[0]);
+    }
+
+    [Fact]
+    public void Configured_types_are_skipped()
+    {
+        var rec = new TraceRecorder(null, new TraceOptions { CallSiteSkip = { typeof(CallSiteCollapseTests).FullName + "+Finder" } });
+        Finder.Wait(rec);
+        var first = rec.Events[0].Location!.Split(" ← ")[0];
+        var waitLine = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "CaptureTests.cs"))
+            .Select((l, i) => (l, i: i + 1)).First(x => x.l.Contains("public static void Wait(TraceRecorder rec)")).i;
+        Assert.NotEqual("CaptureTests.cs:" + waitLine, first);
     }
 }

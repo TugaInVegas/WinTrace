@@ -62,7 +62,8 @@ namespace WinTrace
             var warnings = new List<string>();
             string? Get(string k) => env.TryGetValue(k, out var v) ? v : null;
             foreach (var (key, when) in new[] { ("desktop", "at the start"), ("desktopAtEnd", "at the end") })
-                if (Get(key) is string d && !string.Equals(d, "Default", StringComparison.OrdinalIgnoreCase))
+                // Only a readable desktop name counts: a garbled value is a probe problem, not evidence of a lock screen.
+                if (Get(key) is string d && !string.Equals(d, "Default", StringComparison.OrdinalIgnoreCase) && IsPlainText(d))
                     warnings.Add($"The input desktop {when} was \"{d}\" (lock screen or disconnected session): UI automation cannot reach the app, which shows up as \"element not found\" and blank screenshots.");
             if (Get("interactive") == "no")
                 warnings.Add("The tests ran in a non-interactive session (e.g. a service account): desktop UI tests need an interactive, unlocked desktop.");
@@ -73,9 +74,45 @@ namespace WinTrace
             return warnings;
         }
 
+        static bool IsPlainText(string s) => s.All(ch => ch >= 0x20 && ch < 0x7F);
+
+        /// <summary>
+        /// "WinAppDriver", "Playwright", or "WinAppDriver + Playwright": the configured framework, adjusted to what the
+        /// events actually contain (web events come from merged Playwright traces).
+        /// </summary>
+        public static string FrameworkLabel(TraceMetadata meta, IReadOnlyList<TraceEvent> events)
+        {
+            var web = events.Any(e => e.Origin == "web");
+            var desktop = events.Any(e => e.Origin != "web" && e.Kind != "log");
+            var fw = meta.Framework ?? "";
+            if (web && !desktop) return "Playwright";
+            if (web && fw.IndexOf("Playwright", StringComparison.OrdinalIgnoreCase) < 0) return fw.Length == 0 ? "Playwright" : fw + " + Playwright";
+            return fw;
+        }
+
         /// <summary>Step errors that are not the same failure propagating out of a nested step (no <c>CauseSeq</c>).</summary>
         public static IReadOnlyList<TraceEvent> StepErrors(IEnumerable<TraceEvent> events) =>
             events.Where(e => e.Kind == "error" && e.CauseSeq == null).OrderBy(e => e.Seq).ToList();
+
+        /// <summary>
+        /// The event holding the screenshot and UI tree for <paramref name="step"/>: the step itself, the nested step it
+        /// failed in (<c>CauseSeq</c>), or, when that step captured nothing (e.g. a <c>Capture.None</c> probe), the
+        /// innermost enclosing step that captured the same failure.
+        /// </summary>
+        public static TraceEvent CaptureFor(TraceEvent step, IReadOnlyList<TraceEvent> events)
+        {
+            var start = step.CauseSeq is int c ? events.FirstOrDefault(e => e.Seq == c) ?? step : step;
+            if (start.ScreenshotAfter != null || start.Snapshot != null) return start;
+            var current = start;
+            for (var guard = 0; guard < 50; guard++)
+            {
+                var outer = events.Where(e => e.CauseSeq == current.Seq).OrderByDescending(e => e.Seq).FirstOrDefault();
+                if (outer == null) break;
+                if (outer.ScreenshotAfter != null || outer.Snapshot != null) return outer;
+                current = outer;
+            }
+            return start;
+        }
 
         /// <summary>Whether the test failed: the reported outcome, or for older traces, any step error.</summary>
         public static bool IsFailed(TraceMetadata meta, IEnumerable<TraceEvent> events) =>

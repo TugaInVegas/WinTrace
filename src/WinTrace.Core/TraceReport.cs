@@ -35,7 +35,7 @@ namespace WinTrace
             if (failed && meta.FailureMessage != null) sb.Append("- Failure message: `").Append(meta.FailureMessage.Replace("`", "'")).AppendLine("`");
             sb.Append("- Started: ").Append(meta.Started.ToString("u", inv)).Append(", duration ").Append(Secs(total))
               .Append(", ").Append(events.Count(e => e.Kind != "log")).Append(" steps")
-              .Append(string.IsNullOrEmpty(meta.Framework) ? "" : ", " + meta.Framework).AppendLine();
+              .Append(TraceAnalysis.FrameworkLabel(meta, events) is string fw && fw.Length > 0 ? ", " + fw : "").AppendLine();
             if (traceFile != null) sb.Append("- Trace: `").Append(traceFile).AppendLine("`");
             if (htmlFile != null) sb.Append("- Viewer: `").Append(htmlFile).AppendLine("` (open in a browser)");
             if (failureImageFile != null) sb.Append("- Screenshot at the failure: `").Append(failureImageFile).AppendLine("`");
@@ -44,7 +44,8 @@ namespace WinTrace
 
             if (step != null && (failed || errors.Count > 0))
             {
-                var captured = step.CauseSeq is int c ? events.FirstOrDefault(e => e.Seq == c) ?? step : step;
+                var captured = TraceAnalysis.CaptureFor(step, events);
+                var detailFrom = step.CauseSeq is int c ? events.FirstOrDefault(e => e.Seq == c) ?? step : step;
                 sb.AppendLine(failed ? "## Failure" : "## First recovered error").AppendLine();
                 if (outside)
                     sb.AppendLine("The test failed **outside the recorded steps** (for example in an assertion). The last recorded step was:").AppendLine();
@@ -57,7 +58,7 @@ namespace WinTrace
                 if (step.Error != null) sb.Append("Error: `").Append(step.Error.Replace("`", "'")).AppendLine("`").AppendLine();
 
                 var snapshot = Text(captured.Snapshot);
-                var locator = step.Kind == "error" ? TraceAnalysis.GuessLocator(captured, events) : null;
+                var locator = step.Kind == "error" ? TraceAnalysis.GuessLocator(detailFrom, events) : null;
                 var similar = locator != null ? TraceAnalysis.FindSimilar(snapshot, locator) : Array.Empty<SimilarElement>();
                 if (similar.Count > 0)
                 {
@@ -73,9 +74,11 @@ namespace WinTrace
                         ? "No locator was recorded for this step, so no similar elements can be suggested."
                         : $"No UI element resembles `{TraceAnalysis.LocatorValue(locator)}`: it may not exist yet (add a wait) or be in another window.").AppendLine();
 
-                if (captured.ErrorDetail != null)
+                if (captured != step && captured != detailFrom)
+                    sb.Append("Screenshot and UI tree were captured by the enclosing step #").Append(captured.Seq).Append(" (").Append(captured.Name).AppendLine(").").AppendLine();
+                if (detailFrom.ErrorDetail != null)
                     sb.AppendLine("<details><summary>Stack trace</summary>").AppendLine().AppendLine("```")
-                      .AppendLine(captured.ErrorDetail.TrimEnd()).AppendLine("```").AppendLine().AppendLine("</details>").AppendLine();
+                      .AppendLine(detailFrom.ErrorDetail.TrimEnd()).AppendLine("```").AppendLine().AppendLine("</details>").AppendLine();
 
                 if (snapshot != null)
                 {

@@ -124,6 +124,11 @@ namespace WinTrace
         public bool CaptureCallSite { get; set; } = true;
         /// <summary>How many of your own frames to keep in a step's call site (default 3).</summary>
         public int CallSiteDepth { get; set; } = 3;
+        /// <summary>
+        /// Types or namespaces (full-name prefixes, e.g. "MyTests.Infrastructure.") to leave out of call sites, for helpers
+        /// you cannot mark with <c>[StackTraceHidden]</c> / <c>[DebuggerStepThrough]</c>.
+        /// </summary>
+        public ISet<string> CallSiteSkip { get; set; } = new HashSet<string>(StringComparer.Ordinal);
         /// <summary>Record the desktop environment (screen, scaling, session, lock screen) at the start and end (default true).</summary>
         public bool CaptureEnvironment { get; set; } = true;
         /// <summary>

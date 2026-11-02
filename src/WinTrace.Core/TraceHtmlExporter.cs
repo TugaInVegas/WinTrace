@@ -85,7 +85,8 @@ namespace WinTrace
                 written.Add(dest);
             }
             var warnings = TraceAnalysis.EnvironmentWarnings(meta);
-            var data = JsonSerializer.Serialize(new { meta, events = evs, resources = res, warnings }, opts)
+            var framework = TraceAnalysis.FrameworkLabel(meta, evs);
+            var data = JsonSerializer.Serialize(new { meta, events = evs, resources = res, warnings, framework }, opts)
                 .Replace("</", "<\\/");
 
             string template;
