@@ -28,6 +28,14 @@ namespace WinTrace
     public static class PlaywrightTrace
     {
         // Calls that are plumbing rather than user actions.
+        // Queries and helpers Playwright and test helpers call around the real actions; kept but marked minor.
+        static readonly HashSet<string> MinorMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "queryCount", "queryAll", "querySelector", "querySelectorAll", "isVisible", "isHidden", "isEnabled", "isDisabled",
+            "isChecked", "isEditable", "screenshot", "textContent", "innerText", "innerHTML", "getAttribute", "inputValue",
+            "boundingBox", "title", "url", "content", "evaluate", "evaluateExpression", "evaluateExpressionHandle", "waitForTimeout"
+        };
+
         static readonly HashSet<string> SkippedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "newPage", "newContext", "launch", "launchPersistentContext", "connect", "connectOverCDP",
@@ -234,6 +242,7 @@ namespace WinTrace
                 var ev = new TraceEvent
                 {
                     Origin = "web",
+                    Minor = c.Method != null && MinorMethods.Contains(c.Method) ? true : (bool?)null,
                     Name = Title(c),
                     Target = target,
                     Start = At(c.Start),

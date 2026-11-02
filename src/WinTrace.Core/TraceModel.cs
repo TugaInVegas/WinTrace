@@ -33,6 +33,16 @@ namespace WinTrace
         public string? Origin { get; set; }
         /// <summary>Source location that issued the call when known (e.g. "LoginTests.cs:42"), from Playwright stacks.</summary>
         public string? Location { get; set; }
+        /// <summary>
+        /// What was observed around the step, when known: "screen" ("unchanged" when the screenshot after the step equals the
+        /// one before it), "appResponding" ("yes"/"no"), "appCpu" (e.g. "93%"), and anything an <see cref="IStepDiagnostics"/> adds.
+        /// </summary>
+        public Dictionary<string, string>? Diagnostics { get; set; }
+        /// <summary>
+        /// Low-signal step: a <c>Capture.None</c> probe, or a Playwright internal query (isVisible, queryCount, screenshot...).
+        /// The viewer's "Hide noise" hides these unless they are part of the test's failure.
+        /// </summary>
+        public bool? Minor { get; set; }
     }
 
     /// <summary>What to capture for one step, overriding <see cref="TraceOptions"/>.</summary>
@@ -83,11 +93,16 @@ namespace WinTrace
         public string Framework { get; set; } = "";
         public DateTimeOffset Started { get; set; }
         public DateTimeOffset? Stopped { get; set; }
-        /// <summary>"passed" or "failed" as reported by the test framework; null when not reported.</summary>
+        /// <summary>
+        /// "passed" or "failed" as reported by the test framework, "aborted" for a trace recovered after the test process
+        /// ended early (see <c>wintrace recover</c>); null when not reported.
+        /// </summary>
         public string? Outcome { get; set; }
         /// <summary>Failure message reported with the outcome, if any.</summary>
         public string? FailureMessage { get; set; }
         public List<TraceVideo> Videos { get; set; } = new List<TraceVideo>();
+        /// <summary>Test context set with <see cref="TraceRecorder.SetContext"/> (environment, data, record ids...).</summary>
+        public Dictionary<string, string> Context { get; set; } = new Dictionary<string, string>();
         /// <summary>Original Playwright traces merged into this one, kept whole so they open in Playwright's own viewer.</summary>
         public List<PlaywrightTraceRef> PlaywrightTraces { get; set; } = new List<PlaywrightTraceRef>();
         /// <summary>
@@ -116,7 +131,7 @@ namespace WinTrace
         /// </summary>
         public TimeSpan? SnapshotTimeout { get; set; }
         /// <summary>
-        /// Record which code issued each step (e.g. "AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42"),
+        /// Record which code issued each step (e.g. "UiHelpers.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42"),
         /// from the call stack, skipping WinTrace, framework code and methods or types marked
         /// <c>[StackTraceHidden]</c> or <c>[DebuggerStepThrough]</c> (mark your own tracing helpers that way).
         /// Needs PDB files next to the test assemblies (the default for Debug and Release builds). Default true.
@@ -137,6 +152,16 @@ namespace WinTrace
         /// </summary>
         public ISet<string> RedactParams { get; set; } =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "password", "secret", "token" };
+    }
+
+    /// <summary>
+    /// Optional for an <see cref="ITraceSource"/>: observations around each step (is the app responding, CPU...). The
+    /// recorder calls <see cref="BeginStep"/> before the step body and <see cref="EndStep"/> right after it. Must not throw.
+    /// </summary>
+    public interface IStepDiagnostics
+    {
+        object? BeginStep();
+        IDictionary<string, string>? EndStep(object? state);
     }
 
     /// <summary>Implement per automation framework: how to grab a PNG and a UI-tree snapshot.</summary>

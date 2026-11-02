@@ -25,12 +25,28 @@ namespace WinTrace
         public bool OutsideSteps { get; set; }
         public string? MarkdownPath { get; set; }
         public IReadOnlyList<string> EnvironmentWarnings { get; set; } = Array.Empty<string>();
+        /// <summary>Test context from the trace (<c>TraceRecorder.SetContext</c>).</summary>
+        public IReadOnlyDictionary<string, string> Context { get; set; } = new Dictionary<string, string>();
         /// <summary>new, recurring, intermittent or unknown (no history).</summary>
         public string History { get; set; } = "unknown";
         public string HistoryDetail { get; set; } = "";
+        /// <summary>The earlier run whose passing trace of this test was compared, when there is one.</summary>
+        public string? ComparedWith { get; set; }
+        /// <summary>For a failed test: where its steps first differ from the last passing run.</summary>
+        public string? Divergence { get; set; }
+        /// <summary>Steps at least 2x and 1 s slower than in the last passing run, slowest change first.</summary>
+        public List<SlowerStep> SlowerSteps { get; set; } = new List<SlowerStep>();
     }
 
     /// <summary>Failed tests that failed the same way (same step, target and normalized error).</summary>
+    public sealed class SlowerStep
+    {
+        public int Seq { get; set; }
+        public string Step { get; set; } = "";
+        public double DurationMs { get; set; }
+        public double PassingDurationMs { get; set; }
+    }
+
     public sealed class FailureCluster
     {
         public string Signature { get; set; } = "";
@@ -84,9 +100,12 @@ namespace WinTrace
         public string Name { get; set; } = "";
         public Dictionary<string, string?> FailedSignatures { get; } = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         public TrxRun? Trx { get; set; }
+        /// <summary>Steps of the tests that passed in this run and left a trace (e.g. <c>SavePassedSummary</c>), by test title.</summary>
+        public Dictionary<string, IReadOnlyList<TraceEvent>> PassedSteps { get; } = new Dictionary<string, IReadOnlyList<TraceEvent>>(StringComparer.OrdinalIgnoreCase);
 
         public RunOutcome OutcomeOf(string test) =>
             FailedSignatures.ContainsKey(test) ? RunOutcome.Failed
+            : PassedSteps.ContainsKey(test) && !(Trx != null && Trx.Tests.TryGetValue(test, out var t) && t == RunOutcome.Failed) ? RunOutcome.Passed
             : Trx != null && Trx.Tests.TryGetValue(test, out var o) ? o
             : RunOutcome.Unknown;
     }
@@ -126,6 +145,7 @@ namespace WinTrace
             {
                 var entry = Describe(t, path);
                 if (entry.Failed) Classify(entry, report.History);
+                Compare(entry, t.Events, report.History);
                 report.Entries.Add(entry);
             }
 
@@ -155,12 +175,20 @@ namespace WinTrace
         public static HistoricRun ReadHistoricRun(string name, IEnumerable<string> tracePaths, TrxRun? trx)
         {
             var run = new HistoricRun { Name = name, Trx = trx };
+            var passedAt = new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
             foreach (var path in tracePaths)
             {
                 try
                 {
                     var t = TraceReader.ReadSummary(path);
-                    if (!TraceAnalysis.IsFailed(t.Meta, t.Events)) continue;
+                    if (!TraceAnalysis.IsFailed(t.Meta, t.Events))
+                    {
+                        // Several passing traces of one test (retries): keep the newest.
+                        if (passedAt.TryGetValue(t.Meta.Title, out var at) && at >= t.Meta.Started) continue;
+                        passedAt[t.Meta.Title] = t.Meta.Started;
+                        run.PassedSteps[t.Meta.Title] = t.Events;
+                        continue;
+                    }
                     run.FailedSignatures[t.Meta.Title] = Describe(t, path).Signature;
                 }
                 catch (Exception ex) when (ex is InvalidDataException || ex is IOException || ex is System.Text.Json.JsonException) { }
@@ -180,7 +208,8 @@ namespace WinTrace
                 Failed = failed,
                 OutsideSteps = failed && outside,
                 MarkdownPath = File.Exists(md) ? md : null,
-                EnvironmentWarnings = TraceAnalysis.EnvironmentWarnings(t.Meta)
+                EnvironmentWarnings = TraceAnalysis.EnvironmentWarnings(t.Meta),
+                Context = t.Meta.Context ?? new Dictionary<string, string>()
             };
             if (!failed) return entry;
             if (outside)
@@ -196,6 +225,70 @@ namespace WinTrace
                 entry.Signature = $"{step.Origin}|{step.Name}|{step.Target}|{Normalize(step.Error)}";
             }
             return entry;
+        }
+
+        // Steps that matter for comparing runs: actions and failures, not logs or minor probes.
+        static List<TraceEvent> Comparable(IEnumerable<TraceEvent> events) =>
+            events.Where(e => e.Kind != "log" && e.Minor != true && e.CauseSeq == null).OrderBy(e => e.Seq).ToList();
+
+        static string Key(TraceEvent e) => $"{e.Origin}|{e.Group}|{e.Name}|{e.Target}";
+        static string Label(TraceEvent e) => $"#{e.Seq} {(e.Origin == "web" ? "[web] " : "")}{e.Name}{(e.Target != null ? " " + e.Target : "")}";
+        static string Secs(double ms) => (ms / 1000).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s";
+
+        /// <summary>Compares a test with its last passing run: first divergent step (failed tests) and steps that got slower.</summary>
+        static void Compare(RunReportEntry entry, IReadOnlyList<TraceEvent> events, List<HistoricRun> history)
+        {
+            var run = history.FirstOrDefault(h => h.PassedSteps.ContainsKey(entry.Title) && h.OutcomeOf(entry.Title) == RunOutcome.Passed);
+            if (run == null) return;
+            entry.ComparedWith = run.Name;
+            var now = Comparable(events);
+            var before = Comparable(run.PassedSteps[entry.Title]);
+
+            if (entry.Failed)
+            {
+                for (var i = 0; ; i++)
+                {
+                    if (i >= now.Count)
+                    {
+                        entry.Divergence = i >= before.Count
+                            ? "same steps as the last passing run; the failure came after them"
+                            : $"this run stopped after {(i == 0 ? "no steps" : Label(now[i - 1]))}; the last passing run went on with {Label(before[i])}";
+                        break;
+                    }
+                    if (i >= before.Count) { entry.Divergence = $"{Label(now[i])}: the last passing run had no more steps at this point"; break; }
+                    if (Key(now[i]) != Key(before[i]))
+                    {
+                        entry.Divergence = $"{Label(now[i])} here, where the last passing run did {Label(before[i])}";
+                        break;
+                    }
+                    if (now[i].Kind == "error")
+                    {
+                        entry.Divergence = $"{Label(now[i])} failed after {Secs(now[i].DurationMs)}; the same step passed in {Secs(before[i].DurationMs)} in the last passing run (all steps before it matched)";
+                        break;
+                    }
+                }
+            }
+
+            // Match repeated steps by occurrence (the 3rd "click Save" with the 3rd "click Save").
+            var passing = new Dictionary<string, List<TraceEvent>>();
+            foreach (var e in before)
+            {
+                if (!passing.TryGetValue(Key(e), out var l)) passing[Key(e)] = l = new List<TraceEvent>();
+                l.Add(e);
+            }
+            var seen = new Dictionary<string, int>();
+            var slower = new List<SlowerStep>();
+            foreach (var e in now)
+            {
+                var k = Key(e);
+                seen.TryGetValue(k, out var n);
+                seen[k] = n + 1;
+                if (e.Kind == "error" || !passing.TryGetValue(k, out var list) || n >= list.Count) continue;
+                var was = list[n].DurationMs;
+                if (e.DurationMs >= 2 * was && e.DurationMs - was >= 1000)
+                    slower.Add(new SlowerStep { Seq = e.Seq, Step = Label(e).Substring(Label(e).IndexOf(' ') + 1), DurationMs = Math.Round(e.DurationMs), PassingDurationMs = Math.Round(was) });
+            }
+            entry.SlowerSteps = slower.OrderByDescending(s => s.DurationMs - s.PassingDurationMs).Take(5).ToList();
         }
 
         static void Classify(RunReportEntry entry, List<HistoricRun> history)
@@ -261,14 +354,35 @@ namespace WinTrace
                 {
                     sb.Append("### ").Append(++i).Append(". ").Append(c.Description).Append(" (").Append(c.Tests.Count)
                       .Append(c.Tests.Count == 1 ? " test" : " tests").AppendLine(")").AppendLine();
-                    sb.AppendLine("| Test | History | Called from | Report |").AppendLine("|---|---|---|---|");
+                    sb.AppendLine("| Test | Context | History | Called from | Report |").AppendLine("|---|---|---|---|---|");
                     foreach (var e in c.Tests)
-                        sb.Append("| ").Append(Cell(e.Title)).Append(" | ").Append(e.History).Append(e.HistoryDetail.Length > 0 ? " (" + Cell(e.HistoryDetail) + ")" : "")
+                        sb.Append("| ").Append(Cell(e.Title)).Append(" | ").Append(Cell(string.Join(", ", e.Context.Select(kv => kv.Key + "=" + kv.Value)))).Append(" | ").Append(e.History).Append(e.HistoryDetail.Length > 0 ? " (" + Cell(e.HistoryDetail) + ")" : "")
                           .Append(" | ").Append(Cell(e.Location)).Append(" | ").Append(Link(e.MarkdownPath ?? e.TracePath, e.MarkdownPath != null ? "summary" : "trace")).AppendLine(" |");
                     sb.AppendLine();
+                    var compared = c.Tests.Where(e => e.Divergence != null).ToList();
+                    if (compared.Count > 0)
+                    {
+                        sb.AppendLine("Compared with the last passing run:").AppendLine();
+                        foreach (var e in compared)
+                            sb.Append("- ").Append(e.Title).Append(" (").Append(e.ComparedWith).Append("): first difference at ").Append(e.Divergence).AppendLine();
+                        sb.AppendLine();
+                    }
                 }
             }
             else sb.AppendLine("No failed tests with a trace.").AppendLine();
+
+            var slow = Entries.Where(e => e.SlowerSteps.Count > 0).OrderBy(e => e.Title).ToList();
+            if (slow.Count > 0)
+            {
+                sb.AppendLine("## Slower than the last passing run").AppendLine();
+                sb.AppendLine("Steps at least twice and 1 s slower than in the test's last passing run (a sign of a slower app, data or environment):").AppendLine();
+                sb.AppendLine("| Test | Step | This run | Last pass | Run compared |").AppendLine("|---|---|---|---|---|");
+                foreach (var e in slow)
+                    foreach (var s in e.SlowerSteps)
+                        sb.Append("| ").Append(Cell(e.Title)).Append(" | #").Append(s.Seq).Append(' ').Append(Cell(s.Step)).Append(" | ").Append(Secs(s.DurationMs))
+                          .Append(" | ").Append(Secs(s.PassingDurationMs)).Append(" | ").Append(Cell(e.ComparedWith)).AppendLine(" |");
+                sb.AppendLine();
+            }
 
             if (FailedWithoutTrace.Count > 0)
             {

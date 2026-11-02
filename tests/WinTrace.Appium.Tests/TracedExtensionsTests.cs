@@ -84,3 +84,38 @@ public class ScreenshotCompressionTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ScreenshotCompression.ScaleDown(5));
     }
 }
+
+public class ProcessWindowsTests
+{
+    [Fact]
+    public void Process_windows_are_added_to_the_snapshot_root()
+    {
+        var xml = "<Window Name=\"Sample App\" x=\"0\" y=\"0\" width=\"800\" height=\"600\"><Button Name=\"Save\"/></Window>";
+        var result = ProcessWindows.AppendTo(xml, new[] { new ProcessWindowInfo(new IntPtr(0x1A2B), "", "Popup", 100, 620, 200, 150) });
+        var elements = TraceAnalysis.ParseTree(result);
+        var popup = elements.Single(e => e.Tag == "ProcessWindow");
+        Assert.Equal("Popup", popup.ClassName);
+        Assert.Equal(620, popup.Y);
+        Assert.Null(popup.SuggestedLocator());
+        Assert.Equal(xml, ProcessWindows.AppendTo(xml, Array.Empty<ProcessWindowInfo>()));
+        Assert.Equal("not xml", ProcessWindows.AppendTo("not xml", new[] { new ProcessWindowInfo(IntPtr.Zero, "t", "c", 0, 0, 1, 1) }));
+    }
+
+    [Theory]
+    [InlineData("0x0005089C", 0x5089C)]
+    [InlineData("329884", 329884)]
+    public void Window_handles_parse_in_hex_and_decimal(string text, long expected)
+    {
+        Assert.True(ProcessWindows.TryParseHandle(text, out var h));
+        Assert.Equal(expected, h.ToInt64());
+        Assert.False(ProcessWindows.TryParseHandle("", out _));
+    }
+
+    [Fact]
+    public void Cpu_percent_is_relative_to_all_cores_and_clamped()
+    {
+        Assert.Equal(50, ProcessWindows.CpuPercent(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1), 4));
+        Assert.Equal(100, ProcessWindows.CpuPercent(TimeSpan.FromSeconds(9), TimeSpan.FromSeconds(1), 4));
+        Assert.Equal(0, ProcessWindows.CpuPercent(TimeSpan.FromSeconds(1), TimeSpan.Zero, 4));
+    }
+}

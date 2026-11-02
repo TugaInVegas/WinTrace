@@ -6,10 +6,10 @@ using System.Text.RegularExpressions;
 
 namespace WinTrace.Cli
 {
-    /// <summary>Finds trace zips written by TraceSession (&lt;test&gt;_yyyyMMdd_HHmmss[_failed].zip) under a folder.</summary>
+    /// <summary>Finds trace zips written by TraceSession (&lt;test&gt;_yyyyMMdd_HHmmss[_failed|_aborted|_passed].zip) under a folder.</summary>
     public static class TraceFiles
     {
-        static readonly Regex TraceName = new Regex(@"_\d{8}_\d{6}(_failed)?\.zip$", RegexOptions.IgnoreCase);
+        static readonly Regex TraceName = new Regex(@"_\d{8}_\d{6}(_failed|_aborted|_passed)?\.zip$", RegexOptions.IgnoreCase);
 
         /// <summary>Trace zips under <paramref name="folder"/> (recursively), newest first.</summary>
         public static IReadOnlyList<FileInfo> Find(string folder)
@@ -21,7 +21,8 @@ namespace WinTrace.Cli
             return found.OrderByDescending(f => f.LastWriteTimeUtc).ToList();
         }
 
-        public static bool IsFailedName(string path) => path.EndsWith("_failed.zip", StringComparison.OrdinalIgnoreCase);
+        public static bool IsFailedName(string path) =>
+            path.EndsWith("_failed.zip", StringComparison.OrdinalIgnoreCase) || path.EndsWith("_aborted.zip", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// A trace file as given, or for a folder the newest failed trace in it (else the newest trace).

@@ -16,7 +16,7 @@ public class TraceSessionTests
         var s = new TraceSession("Login_ShowsDashboard", null, dir);
         s.Recorder.Step("click", "ok", () => { });
         Assert.Empty(s.Finish(testFailed: false));
-        Assert.False(Directory.Exists(dir));
+        Assert.True(!Directory.Exists(dir) || Directory.GetFileSystemEntries(dir, "*", SearchOption.AllDirectories).Length == 0);
     }
 
     [Fact]

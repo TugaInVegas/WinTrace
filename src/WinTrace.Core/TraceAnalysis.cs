@@ -33,7 +33,8 @@ namespace WinTrace
 
         /// <summary>The most robust locator for this element, in Appium C# syntax, or null if it has no usable property.</summary>
         public string? SuggestedLocator() =>
-            !string.IsNullOrEmpty(AutomationId) ? $"MobileBy.AccessibilityId(\"{AutomationId}\")"
+            Tag == "ProcessWindow" ? null   // another top-level window of the app, added by WinTrace.Appium: not an element locator
+            : !string.IsNullOrEmpty(AutomationId) ? $"MobileBy.AccessibilityId(\"{AutomationId}\")"
             : !string.IsNullOrEmpty(Name) ? $"By.Name(\"{Name}\")"
             : !string.IsNullOrEmpty(ClassName) ? $"By.ClassName(\"{ClassName}\")"
             : null;
@@ -116,7 +117,26 @@ namespace WinTrace
 
         /// <summary>Whether the test failed: the reported outcome, or for older traces, any step error.</summary>
         public static bool IsFailed(TraceMetadata meta, IEnumerable<TraceEvent> events) =>
-            meta.Outcome != null ? meta.Outcome == "failed" : StepErrors(events).Count > 0;
+            meta.Outcome != null ? meta.Outcome != "passed" : StepErrors(events).Count > 0;
+
+        /// <summary>
+        /// True for a minor step (<see cref="TraceEvent.Minor"/>) that is not part of the test's failure: a probe that
+        /// succeeded or missed and was recovered. Viewers and reports may hide these.
+        /// </summary>
+        public static bool IsNoise(TraceEvent e, TraceMetadata meta, IReadOnlyList<TraceEvent> events)
+        {
+            if (e.Minor != true) return false;
+            if (e.Kind != "error" || !IsFailed(meta, events)) return true;
+            return !EndedTheTest(e, events);
+        }
+
+        // A minor step that threw is part of the failure when an enclosing step failed with it or nothing ran after it.
+        static bool EndedTheTest(TraceEvent e, IReadOnlyList<TraceEvent> events) =>
+            events.Any(x => x.CauseSeq == e.Seq) || events.Where(x => x.Kind != "log").LastOrDefault()?.Seq == e.Seq;
+
+        /// <summary>A minor step that threw and was recovered (a probe that missed).</summary>
+        public static bool IsRecoveredMiss(TraceEvent e, TraceMetadata meta, IReadOnlyList<TraceEvent> events) =>
+            e.Kind == "error" && IsNoise(e, meta, events);
 
         /// <summary>
         /// The step to look at first: where the test failed (the last step error; nested failures report their
@@ -125,8 +145,9 @@ namespace WinTrace
         /// </summary>
         public static TraceEvent? FailureStep(TraceMetadata meta, IReadOnlyList<TraceEvent> events, out bool failedOutsideSteps)
         {
-            var errors = StepErrors(events);
             var failed = IsFailed(meta, events);
+            // In a failed test, a probe that missed and was recovered is not where it failed.
+            var errors = StepErrors(events).Where(e => !failed || e.Minor != true || EndedTheTest(e, events)).ToList();
             failedOutsideSteps = failed && errors.Count == 0;
             if (failedOutsideSteps) return events.LastOrDefault(e => e.Kind != "log") ?? events.LastOrDefault();
             return failed ? errors.LastOrDefault() : errors.FirstOrDefault();
@@ -230,6 +251,7 @@ namespace WinTrace
             var want = LocatorValue(target).ToLowerInvariant();
             if (want.Length == 0) return Array.Empty<SimilarElement>();
             return ParseTree(snapshot)
+                .Where(e => e.Tag != "ProcessWindow")
                 .Select(e => new SimilarElement { Element = e, Score = Math.Max(Similarity(want, e.AutomationId), Similarity(want, e.Name)) })
                 .Where(s => s.Score >= minScore)
                 .OrderByDescending(s => s.Score)

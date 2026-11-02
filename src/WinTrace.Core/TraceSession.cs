@@ -19,6 +19,33 @@ namespace WinTrace
     public sealed class TraceSession
     {
         readonly string _name;
+        readonly string _stamp;
+
+        /// <summary>
+        /// Whether new sessions keep a live copy of the trace on disk while the test runs (default true), so a test process
+        /// that dies, times out or is stopped still leaves a trace that <see cref="RecoverAbandoned"/> or
+        /// <c>wintrace recover</c> can turn into a normal one. The copy is deleted by <see cref="Finish(bool, Action{string})"/>.
+        /// </summary>
+        public static bool LiveRecordingDefault { get; set; } = true;
+
+        /// <summary>Folder of this session's live copy: &lt;OutputDir&gt;/.live/&lt;test&gt;_&lt;time&gt;.</summary>
+        public string LiveDirectory => Path.Combine(OutputDir, ".live", $"{_name}_{_stamp}");
+
+        /// <summary>
+        /// Turns live copies left by tests that never reached <c>Finish</c> (process killed, timeout, run stopped) into
+        /// <c>*_aborted</c> traces (zip, html, md) in <paramref name="outputDir"/>. Call it before a run starts (e.g. in
+        /// AssemblyInitialize), when no test of this output folder is running. Returns the files written.
+        /// </summary>
+        public static IReadOnlyList<string> RecoverAbandoned(string outputDir = "TestResults/WinTrace")
+        {
+            var written = new List<string>();
+            var live = Path.Combine(outputDir, ".live");
+            if (!Directory.Exists(live)) return written;
+            foreach (var dir in Directory.GetDirectories(live))
+                try { written.AddRange(TraceRecovery.Recover(dir, outputDir)); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is System.Text.Json.JsonException || ex is InvalidDataException) { }
+            return written;
+        }
         FfmpegScreenRecorder? _video;
         string? _videoPath;
 
@@ -30,6 +57,8 @@ namespace WinTrace
             if (string.IsNullOrEmpty(options.Title) || options.Title == "WinTrace") options.Title = testName;
             Recorder = new TraceRecorder(source, options);
             TraceRecorder.Current = Recorder;
+            _stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            if (LiveRecordingDefault) Recorder.WriteLiveTo(LiveDirectory);
         }
 
         public TraceRecorder Recorder { get; }
@@ -57,6 +86,13 @@ namespace WinTrace
         /// Also save the trace of a passed test when one of its steps threw and the test recovered (default false).
         /// </summary>
         public bool SaveRecoveredErrors { get; set; }
+        /// <summary>
+        /// For a passed test whose trace is not saved, write a light <c>&lt;name&gt;_&lt;stamp&gt;_passed.zip</c> with the steps and
+        /// their durations only (no screenshots, UI trees or video; a few KB). <c>wintrace report --history</c> uses these to
+        /// show where a failed run first differs from the last passing one and which steps got slower. Default false. The
+        /// file is returned by <see cref="Finish(bool, Action{string}, string)"/> but not passed to the attach callback.
+        /// </summary>
+        public bool SavePassedSummary { get; set; }
 
         /// <summary>Record the desktop with ffmpeg for this test. The file is kept only if the trace is saved.</summary>
         public void StartVideo(string ffmpegPath = "ffmpeg", int fps = 10)
@@ -91,13 +127,22 @@ namespace WinTrace
             var written = new List<string>();
             if (!SaveOnlyOnFailure || failed || (SaveRecoveredErrors && Recorder.HasErrors))
             {
-                var stem = Path.Combine(OutputDir, $"{_name}_{DateTime.Now:yyyyMMdd_HHmmss}{(failed ? "_failed" : "")}");
+                var stem = Path.Combine(OutputDir, $"{_name}_{_stamp}{(failed ? "_failed" : "")}");
                 var zip = Recorder.Save(stem + ".zip");
                 written.Add(zip);
                 if (WriteHtml) written.AddRange(Recorder.ExportHtml(stem + ".html", EmbedVideoInHtml, EmbedPlaywrightTracesInHtml));
                 if (WriteMarkdown) written.AddRange(WriteReport(stem, zip, WriteHtml ? stem + ".html" : null));
                 foreach (var f in written) attach?.Invoke(f);
             }
+            else if (SavePassedSummary && !failed)
+                written.Add(Recorder.SaveSummary(Path.Combine(OutputDir, $"{_name}_{_stamp}_passed.zip")));
+            Recorder.DeleteLiveCopy();
+            try
+            {
+                var live = Path.Combine(OutputDir, ".live");
+                if (Directory.Exists(live) && !Directory.EnumerateFileSystemEntries(live).Any()) Directory.Delete(live);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
             // The video is inside the zip (and in or next to the HTML), so the raw recording is no longer needed.
             if (_videoPath != null) TryDelete(_videoPath);
             return written;

@@ -35,6 +35,18 @@ By default traces are kept only for failed tests (`SaveOnlyOnFailure = true`). M
 your cleanup method and receives the real outcome. Files go to `TestResults/WinTrace` relative to the test's
 working directory (usually `bin/<config>/<tfm>`).
 
+If the test host crashed, timed out or the run was stopped, cleanup never ran: look for `.live/` in that folder and
+run `wintrace recover <folder>`, which writes a `*_aborted` trace up to the step that was running
+([details](configuration.md#crash-safe-recording-and-live-view)).
+
+## A step failed although it ran: was the app busy?
+
+Look at the step's diagnostics (Details tab, `wintrace inspect`): *App not responding* or a high *App CPU* means
+the app was busy, so wait for the app to be ready (a loading indicator to disappear, an element to be enabled)
+rather than changing the locator. *Screen unchanged* on the action right before the failure means that action
+(often a click that opens a menu) did not take effect. Other windows of the app listed in the `.md` and `inspect`
+tell whether a popup or dropdown was open at the failure.
+
 ## The UI tree tab is empty
 
 Snapshots are taken only for failed steps by default. For other steps the tab says so. Set

@@ -73,6 +73,17 @@ public void FinishTrace() =>
 **xUnit** has no outcome API: set a `_passed = true` flag as the last line of each test and call
 `Trace.Finish(!_passed)` in `Dispose()`. See [getting started](getting-started.md#xunit).
 
+Optional, recommended for suites run in CI:
+
+```csharp
+[AssemblyInitialize]
+public static void RecoverAbandonedTraces(TestContext _) =>
+    TraceSession.RecoverAbandoned("TestResults/WinTrace");   // traces of tests a crash or timeout cut short
+```
+
+and, in the setup, `Trace.Recorder.SetContext("<key>", value)` for the data a test uses (environment, record ids), and
+`SavePassedSummary = true` on the session when runs are archived for `wintrace report --history`.
+
 `Finish` only writes files (screenshots are taken during the steps), so it can run anywhere in the teardown,
 including after the driver is closed. Put it last, in a `finally`, after a Playwright trace was saved and imported
 (see [Playwright](playwright.md)) and after any external screen recorder stopped. The exception is
@@ -129,12 +140,17 @@ Every failed test leaves, next to its `*_failed.zip`:
   locators), stack trace, every step and the UI tree at the failure. **Read this first**; no tool needed.
 - `*_failed.png` (or `.jpg`): the screenshot at the failure, for agents that can read images.
 
-Each step records the code that issued it (`AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`), so
+Each step records the code that issued it (`UiHelpers.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`), so
 you can open the right file and line directly. Environment warnings at the top of the `.md` (locked screen,
 non-interactive session) mean the failure is probably not in the test code.
 
 After a full run, start with `wintrace report <folder> --history <archive>`: it groups failures by cause and marks
-each one new, recurring or intermittent. Fix one cause, not ten symptoms.
+each one new, recurring or intermittent, and (when passed tests write light traces) shows where each failure first
+differs from the last passing run and which steps got slower. Fix one cause, not ten symptoms.
+
+A test that crashed, timed out or was stopped has no trace yet: `wintrace recover <folder>` writes a `*_aborted`
+trace from its live copy, with the step that was running marked *Unfinished*. During a long run,
+`wintrace tail <folder> --follow` shows the current step and how long it has been running.
 
 For more, install the CLI once: `dotnet tool install -g WinTrace.Cli`. Every command takes a trace file **or a
 folder** (it then uses the newest failed trace under it).
@@ -162,6 +178,10 @@ How to read the result:
 | "The test failed outside the recorded steps" | An assertion or code outside any step failed | Read the failure message; the last recorded step shows the state before it. |
 | `Cause: failed in nested step #N` | The failure happened inside a nested step | Read step #N: its stack trace and capture are shown. |
 | Error on a step that passed before | App state differs (dialog, focus, data) | Look at the before/after screenshots of the previous steps. |
+| `Observed: app NOT RESPONDING` or high app CPU | The app was busy (loading) | Wait for the app to be ready (indicator gone, element enabled); do not change the locator. |
+| `Previous: ... left the screen unchanged` | The action before the failure did not take effect (a click while busy, a menu that did not open) | Wait before that action, or wait for its effect and retry it once. |
+| `Other windows of the app` lists a popup | The element may be in that popup, not the main window | Find it in the popup (separate top-level window). |
+| Steps marked `missed (recovered)` | `Capture.None` probes that threw and were handled | Not the failure; ignore. |
 
 Prefer `MobileBy.AccessibilityId` locators over XPath: XPath is slow on WinAppDriver.
 
@@ -186,6 +206,14 @@ wintrace snapshot --session <id>                             # the session of a 
 wintrace snapshot --url http://127.0.0.1:4723 --automation-name NovaWindows --window "<title>"   # Appium 2
 ```
 
+Before using a locator, measure it:
+
+```
+wintrace snapshot --window "<window title>" --verify accessibilityid=btnSave --verify "name=Customer name"
+```
+
+It prints how many elements match (use only unique ones) and the lookup time, native and as the equivalent XPath.
+
 `--window` matches the exact title first, then a title containing the text. Sessions created by `snapshot` are
 deleted when it finishes; `--session` only reads.
 
@@ -203,6 +231,8 @@ To make future agents use WinTrace in a project that already has it, add this to
   Read the `.md` and the screenshot before changing code; `wintrace list TestResults --failed` lists them and
   `wintrace inspect TestResults` (`--tree`, `--extract <dir> --all`, `--json`) shows the newest failure.
 - Use the suggested locators for "element not found" errors.
-- New locators come from the running app: `wintrace snapshot --window "<title>" [--find <text>]`. Never guess.
+- New locators come from the running app: `wintrace snapshot --window "<title>" [--find <text>]`. Never guess;
+  check each with `--verify accessibilityid=<id>` (must match exactly one element).
+- A run that crashed or was stopped: `wintrace recover TestResults/WinTrace`. A running test: `wintrace tail TestResults/WinTrace --follow`.
 - Record new user actions as steps (`Step(...)`, `ClickTraced()`, `FindElementTraced(by)`).
 ```

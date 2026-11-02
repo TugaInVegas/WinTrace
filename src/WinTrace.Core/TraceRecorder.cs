@@ -35,6 +35,8 @@ namespace WinTrace
         // Exceptions already captured by an inner step, so outer steps do not capture the same failure again.
         readonly ConditionalWeakTable<Exception, CapturedFailure> _captured = new ConditionalWeakTable<Exception, CapturedFailure>();
         int _seq;
+        LiveTraceWriter? _live;
+        string? _lastScreenshot;
 
         public TraceRecorder(ITraceSource? source = null, TraceOptions? options = null)
         {
@@ -76,6 +78,8 @@ namespace WinTrace
                     name = "video/" + Path.GetFileNameWithoutExtension(path) + "-" + i + Path.GetExtension(path);
                 _meta.Videos.Add(new TraceVideo { File = name, Started = startedAt, DurationSeconds = duration?.TotalSeconds });
                 _videoFiles[name] = path;
+                _live?.WriteMeta(_meta);
+                _live?.WriteVideos(_videoFiles);
             }
         }
 
@@ -94,11 +98,52 @@ namespace WinTrace
                 {
                     PlaywrightTrace.Merge(_meta, _events, _resources, path, _options.RedactParams);
                     if (_events.Count > 0) _seq = Math.Max(_seq, _events.Max(e => e.Seq));
+                    if (_live != null)
+                    {
+                        foreach (var kv in _resources) _live.WriteResource(kv.Key, kv.Value);
+                        _live.RewriteEvents(_events);
+                        _live.WriteMeta(_meta);
+                    }
                 }
                 catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException || ex is JsonException)
                 {
                     Log($"Playwright trace not imported ({Path.GetFileName(path)}): {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Keep a copy of the trace in <paramref name="directory"/> while the test runs (done by <see cref="TraceSession"/>),
+        /// so it can be recovered if the test process ends before the trace is saved. See <see cref="TraceRecovery"/>.
+        /// </summary>
+        public void WriteLiveTo(string directory)
+        {
+            lock (_gate)
+            {
+                _live = new LiveTraceWriter(directory, Json);
+                _live.WriteMeta(_meta);
+                foreach (var kv in _resources) _live.WriteResource(kv.Key, kv.Value);
+                _live.RewriteEvents(_events);
+                _live.WriteVideos(_videoFiles);
+            }
+        }
+
+        /// <summary>Stop the live copy and delete its folder (after the trace was saved, or nothing needed saving).</summary>
+        public void DeleteLiveCopy()
+        {
+            lock (_gate) { _live?.Delete(); _live = null; }
+        }
+
+        /// <summary>
+        /// Attach test context shown in the viewer, the .md and the run report: environment, data set, record ids...
+        /// Values of keys matching <see cref="TraceOptions.RedactParams"/> are hidden.
+        /// </summary>
+        public void SetContext(string key, string value)
+        {
+            lock (_gate)
+            {
+                _meta.Context[key] = IsSensitive(key) ? "***" : value;
+                _live?.WriteMeta(_meta);
             }
         }
 
@@ -109,6 +154,7 @@ namespace WinTrace
             {
                 _meta.Outcome = failed ? "failed" : "passed";
                 _meta.FailureMessage = failureMessage;
+                _live?.WriteMeta(_meta);
                 if (_options.CaptureEnvironment && EnvironmentProbe.InputDesktopName() is string desk) _meta.Environment["desktopAtEnd"] = desk;
             }
         }
@@ -137,6 +183,7 @@ namespace WinTrace
                 ev.Seq = ++_seq;
                 ev.Group = CurrentGroup();
                 _events.Add(ev);
+                _live?.AppendEvent(ev);
             }
         }
 
@@ -153,8 +200,8 @@ namespace WinTrace
         /// <summary>Run <paramref name="body"/> as a traced step, choosing what to capture for this step only.</summary>
         public T Step<T>(string name, string? target, Capture capture, Func<T> body, IDictionary<string, string>? parameters = null)
         {
-            var ev = new TraceEvent { Name = name, Target = target, Start = DateTimeOffset.UtcNow };
-            lock (_gate) { ev.Seq = ++_seq; ev.Group = CurrentGroup(); }
+            var ev = new TraceEvent { Name = name, Target = target, Start = DateTimeOffset.UtcNow, Minor = capture == Capture.None ? true : (bool?)null };
+            lock (_gate) { ev.Seq = ++_seq; ev.Group = CurrentGroup(); _live?.WriteCurrent(ev); }
             if (_options.CaptureCallSite) ev.Location = CallSite.Describe(_options.CallSiteDepth, _options.CallSiteSkip);
             if (parameters != null)
             {
@@ -170,6 +217,14 @@ namespace WinTrace
                 ev.ScreenshotBefore = TryScreenshot();
                 captureTime.Stop();
             }
+
+            // The screen before the step: this step's own screenshot, or the last one taken (to tell "nothing changed").
+            string? screenBefore;
+            lock (_gate) screenBefore = ev.ScreenshotBefore ?? _lastScreenshot;
+            var diagnostics = _source as IStepDiagnostics;
+            object? diagState = null;
+            if (diagnostics != null && capture != Capture.None)
+                try { diagState = diagnostics.BeginStep(); } catch (Exception ex) when (!(ex is OutOfMemoryException)) { diagnostics = null; }
 
             Exception? firstFailure = null, takeOver = null;
             var alreadyCaptured = false;
@@ -207,10 +262,19 @@ namespace WinTrace
             {
                 sw.Stop();
                 ev.DurationMs = sw.Elapsed.TotalMilliseconds;
+                if (diagnostics != null)
+                    try
+                    {
+                        if (diagnostics.EndStep(diagState) is IDictionary<string, string> d && d.Count > 0)
+                            foreach (var kv in d) (ev.Diagnostics ??= new Dictionary<string, string>())[kv.Key] = kv.Value;
+                    }
+                    catch (Exception ex) when (!(ex is OutOfMemoryException)) { }
                 if (!alreadyCaptured && capture != Capture.None)
                 {
                     captureTime.Start();
                     ev.ScreenshotAfter = TryScreenshot();
+                    if (ev.ScreenshotAfter != null && screenBefore != null)
+                        (ev.Diagnostics ??= new Dictionary<string, string>())["screen"] = ev.ScreenshotAfter == screenBefore ? "unchanged" : "changed";
                     var wantSnapshot = capture == Capture.Full
                         || (capture == Capture.Default && (_options.Snapshots == SnapshotMode.Always
                             || (_options.Snapshots == SnapshotMode.OnError && ev.Kind == "error")));
@@ -233,7 +297,12 @@ namespace WinTrace
                         _captured.Add(registered, new CapturedFailure(ev.Seq, ev.ScreenshotAfter, hasCapture));
                     }
                 }
-                lock (_gate) _events.Add(ev);
+                lock (_gate)
+                {
+                    _events.Add(ev);
+                    _live?.AppendEvent(ev);
+                    _live?.ClearCurrent();
+                }
             }
         }
 
@@ -256,7 +325,10 @@ namespace WinTrace
             try
             {
                 var image = _source.CaptureScreenshot();
-                return image == null ? null : AddResource("resources", ImageExtension(image), image);
+                if (image == null) return null;
+                var id = AddResource("resources", ImageExtension(image), image);
+                lock (_gate) _lastScreenshot = id;
+                return id;
             }
             catch (Exception ex) { Log("screenshot failed: " + ex.Message); return null; }
         }
@@ -297,7 +369,11 @@ namespace WinTrace
             using (var sha = SHA1.Create()) hash = BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").ToLowerInvariant();
             var path = $"{folder}/{hash}{ext}";
             lock (_gate)
-                if (!_resources.ContainsKey(path)) _resources[path] = data;
+                if (!_resources.ContainsKey(path))
+                {
+                    _resources[path] = data;
+                    _live?.WriteResource(path, data);
+                }
             return path;
         }
 
@@ -307,6 +383,28 @@ namespace WinTrace
         public TraceMetadata GetMetadata()
         {
             lock (_gate) return JsonSerializer.Deserialize<TraceMetadata>(JsonSerializer.Serialize(_meta, Json), Json)!;
+        }
+
+        /// <summary>
+        /// Write a light trace.zip with the metadata and steps only (no screenshots, UI trees, videos or Playwright traces),
+        /// for comparing runs. Returns the path.
+        /// </summary>
+        public string SaveSummary(string path)
+        {
+            lock (_gate)
+            {
+                var meta = JsonSerializer.Deserialize<TraceMetadata>(JsonSerializer.Serialize(_meta, Json), Json)!;
+                meta.Stopped = DateTimeOffset.UtcNow;
+                meta.Videos.Clear();
+                meta.PlaywrightTraces.Clear();
+                var events = _events.Select(e =>
+                {
+                    var c = JsonSerializer.Deserialize<TraceEvent>(JsonSerializer.Serialize(e, Json), Json)!;
+                    c.ScreenshotBefore = c.ScreenshotAfter = c.Snapshot = null;
+                    return c;
+                }).ToList();
+                return TraceArchive.Write(path, meta, events, Array.Empty<KeyValuePair<string, byte[]>>());
+            }
         }
 
         /// <summary>Write trace.zip (trace.json, events.ndjson, resources/, snapshots/, video/).</summary>

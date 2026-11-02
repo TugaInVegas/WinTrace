@@ -93,7 +93,12 @@ What agents get:
 - **`wintrace list TestResults --failed`** and **`wintrace inspect TestResults`**: failed tests after a run and the
   newest failure in detail (similar elements with suggested locators, stack trace, `--tree`, `--extract`, `--json`).
 - **`wintrace snapshot --window "<title>" --find <text>`**: the live UI tree of the running app with a locator per
-  element, to write new tests with real locators instead of guesses.
+  element, to write new tests with real locators instead of guesses; `--verify accessibilityid=<id>` measures a
+  locator (how many matches, native vs XPath lookup time).
+- **`wintrace tail`** for a live view of a running test, and **`wintrace recover`** for a trace of a test that
+  crashed or was stopped.
+- Per-step **diagnostics** (app not responding, app CPU, screen unchanged) and the app's popups in the UI tree,
+  to tell a wrong locator from a busy app.
 - **Claude Code skills** ([integrations](https://github.com/TugaInVegas/WinTrace/tree/main/integrations)) for
   debugging a failed UI test and writing a new one, and an
   [`llms.txt`](https://github.com/TugaInVegas/WinTrace/blob/main/llms.txt) (also inside each package).
@@ -106,7 +111,7 @@ What agents get:
 | [Getting started](https://github.com/TugaInVegas/WinTrace/blob/main/docs/getting-started.md) | MSTest, NUnit and xUnit setup; page objects; publishing traces from Azure DevOps and GitHub Actions |
 | [Using the viewer](https://github.com/TugaInVegas/WinTrace/blob/main/docs/viewer.md) | Timeline, tabs, UI tree picker, keyboard shortcuts, sharing links |
 | [Configuration](https://github.com/TugaInVegas/WinTrace/blob/main/docs/configuration.md) | `TraceOptions`, `TraceSession`, video, privacy and performance tuning |
-| [Run report](https://github.com/TugaInVegas/WinTrace/blob/main/docs/run-report.md) | Summarize a run: failures by cause, new / recurring / intermittent, Azure DevOps summary |
+| [Run report](https://github.com/TugaInVegas/WinTrace/blob/main/docs/run-report.md) | Summarize a run: failures by cause, new / recurring / intermittent, comparison with the last passing run, Azure DevOps summary |
 | [Combining with Playwright](https://github.com/TugaInVegas/WinTrace/blob/main/docs/playwright.md) | Merge Playwright traces into WinTrace traces, keep the originals for Playwright's viewer |
 | [Writing an adapter](https://github.com/TugaInVegas/WinTrace/blob/main/docs/adapters.md) | Support another tool (e.g. FlaUI) in two methods |
 | [API stability](https://github.com/TugaInVegas/WinTrace/blob/main/docs/stability.md) | What will not change before 1.0, and how versions are numbered |
@@ -119,7 +124,7 @@ What agents get:
 |---|---|
 | [`WinTrace.Core`](https://www.nuget.org/packages/WinTrace.Core) | Recorder, `TraceSession`, trace format, HTML viewer, ffmpeg recorder. netstandard2.0, no UI-automation dependency. |
 | [`WinTrace.Appium`](https://www.nuget.org/packages/WinTrace.Appium) | `AppiumTraceSource` and traced `Find`, `FindAll`, `Click`, `SendKeys`, `Clear`. |
-| [`WinTrace.Cli`](https://www.nuget.org/packages/WinTrace.Cli) | `wintrace list`, `summary`, `inspect`, `show` for traces, and `snapshot` for the live UI tree (console or `--json`, for CI and AI agents). |
+| [`WinTrace.Cli`](https://www.nuget.org/packages/WinTrace.Cli) | `wintrace list`, `summary`, `inspect`, `show`, `report`, `merge`, `tail`, `recover` for traces, and `snapshot` for the live UI tree (console or `--json`, for CI and AI agents). |
 
 ## Contributing
 

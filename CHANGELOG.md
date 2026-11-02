@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.0
+
+From the 0.7.1 wishlist of an MSTest suite driving a desktop app through WinAppDriver and a web app through
+Playwright.
+
+### Added
+- **Crash-safe traces.** While a test runs, its trace is written step by step to `<output>/.live/` (removed by
+  `Finish`). `wintrace recover <folder>` and `TraceSession.RecoverAbandoned(folder)` turn what a crashed, timed-out
+  or stopped test left into `*_aborted.zip` (+ `.html`, `.md`) with the running step marked *Unfinished*. New
+  outcome `aborted`. `TraceSession.LiveRecordingDefault = false` turns the live copy off.
+- **`wintrace tail <folder> [--follow]`**: live view of a running test (current group and step, time in it, errors
+  so far, environment warnings, last steps).
+- **Test context**: `TraceRecorder.SetContext(key, value)`, shown in the viewer, the `.md`, `summary --json` and the
+  run report.
+- **Step diagnostics** (`TraceEvent.Diagnostics`): `screen` unchanged/changed for every captured step;
+  `AppiumTraceSource` adds `appResponding` (`IsHungAppWindow`), `appCpu` and `appRunning`. Shown in the viewer
+  (badges, Details), the `.md` ("Observed: ..." for the failing step and the step before it) and `inspect`.
+  `IStepDiagnostics` lets other sources add their own.
+- **The app's other windows in the UI tree**: `AppiumTraceSource` adds the visible top-level windows of the app's
+  process (popups, dropdowns, dialogs) as `ProcessWindow` elements; the `.md` and `inspect` list them at the failure.
+  `IncludeProcessWindows` / `CollectAppDiagnostics` turn them off.
+- **Comparison with the last passing run**: `TraceSession.SavePassedSummary` writes a light `*_passed.zip` for passed
+  tests (steps and durations only). `wintrace report --history` then shows where a failed test first differs from
+  its last passing run and a *Slower than the last passing run* table (steps ≥ 2x and ≥ 1 s slower).
+- **`wintrace snapshot --verify <locator>`**: match count and lookup time of a locator in the live window, native
+  and as the equivalent XPath, with a verdict (unique / N matches / no match). Accepts `accessibilityid=`, `name=`,
+  `classname=`, `xpath=` or a recorded target like `By.Name: Save`; skips reading the tree when only verifying.
+- **Noise filter**: `Capture.None` steps and Playwright internal queries are marked `minor`. The viewer's
+  *Hide noise* hides them (never the failing step); probes that missed and were recovered are labelled *missed
+  probe* / *missed (recovered)* and no longer picked as the failure step by the `.md`, `inspect` and the run report.
+
+### Fixed
+- The viewer's step filters (Errors, No logs, text search) did not hide rows on screen.
+
 ## 0.7.1
 
 ### Fixed
@@ -42,7 +76,7 @@ Fixes from the first live run of 0.6.0 in an MSTest + WinAppDriver + Playwright 
   (`--azdo` or `TF_BUILD`) it is added to the run's Summary tab and new failures become warnings. `RunReport` and
   `TrxRun` in Core.
 - Call sites for WinTrace steps (`TraceOptions.CaptureCallSite`, `CallSiteDepth`): the user code that issued each step,
-  e.g. `AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`, skipping WinTrace, framework code and helpers
+  e.g. `UiHelpers.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`, skipping WinTrace, framework code and helpers
   marked `[StackTraceHidden]` / `[DebuggerStepThrough]`.
 - Environment diagnostics (`TraceOptions.CaptureEnvironment`): screen, monitors, display scaling, Remote Desktop or
   console session, interactive session, and the input desktop at the start and end (lock screen detection), with

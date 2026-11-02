@@ -27,6 +27,8 @@ wintrace snapshot --window "<window title>" --out tree.xml --screenshot window.p
 - NovaWindowsDriver / Appium 2: add `--url <appium url>` and `--automation-name NovaWindows`.
 - A test paused at a breakpoint: `wintrace snapshot --session <session id>` reads its session.
 - If the app is not running here, ask for a snapshot (`--out tree.xml`) or a failed trace, and work from those.
+- Measure each locator you pick: `wintrace snapshot --window "<title>" --verify accessibilityid=<id>` (repeatable)
+  prints the match count and the native vs XPath lookup time. Use it only when it matches exactly one element.
 
 Prefer, in order: `MobileBy.AccessibilityId` (AutomationId) → `By.Name` (changes with UI language) →
 `By.ClassName` within a container. Avoid XPath on WinAppDriver: it serializes the whole UI tree and is slow.

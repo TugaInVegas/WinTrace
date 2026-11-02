@@ -6,10 +6,19 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using WinTrace;
 using WinTrace.Cli;
 
 const string Usage = @"wintrace - inspect WinTrace traces and live Windows UI
+
+  wintrace tail [<folder>] [--follow]
+      The test running now (from its live trace): current group and step, time in the step, errors so far,
+      last steps. --follow refreshes every 2 s until the test finishes.
+
+  wintrace recover [<folder>] [--keep]
+      Turn live traces left by tests that never finished (process killed, timeout, run stopped) into
+      *_aborted traces (zip, HTML, .md).
 
   wintrace list [<folder>] [--failed] [--limit <n>] [--json]
       Traces under a folder (default: current), newest first, with outcome and failing step.
@@ -37,10 +46,13 @@ const string Usage = @"wintrace - inspect WinTrace traces and live Windows UI
       or turn Playwright traces alone into a WinTrace trace. Writes the zip, the HTML report and the .md.
 
   wintrace snapshot [--url <driver-url>] (--window <title> | --session <id> | --root) [--find <text>]
-                    [--out <tree.xml>] [--screenshot <file.png>] [--automation-name <name>] [--json]
+                    [--verify <locator>]... [--out <tree.xml>] [--screenshot <file.png>] [--automation-name <name>] [--json]
       The live UI tree of a window from WinAppDriver or an Appium server (NovaWindowsDriver), with a
       suggested locator per element. --find lists the elements matching or resembling a text.
-      Default URL: http://127.0.0.1:4723.
+      --verify measures a locator in that window: how many elements match and how long the lookup takes,
+      native and as the equivalent XPath (accessibilityid=<id>, name=<name>, classname=<class>,
+      xpath=<xpath>, or a recorded target like ""By.Name: Save""). Repeatable; skips reading the tree unless
+      --find, --out or --tree is given. Default URL: http://127.0.0.1:4723.
 
   wintrace --version
 
@@ -73,6 +85,8 @@ if (args[0] == "list") return List();
 if (args[0] == "snapshot") return Snapshot();
 if (args[0] == "merge") return Merge();
 if (args[0] == "report") return Report();
+if (args[0] == "recover") return Recover();
+if (args[0] == "tail") return Tail();
 if (args[0] is not ("show" or "summary" or "inspect")) { Console.Error.WriteLine(Usage); return 2; }
 if (args.Length < 2 || args[1].StartsWith("--")) { Console.Error.WriteLine("Give a trace file or a folder.\n\n" + Usage); return 2; }
 var zip = TraceFiles.Resolve(args[1], out var picked) ?? "";
@@ -239,6 +253,63 @@ int Report()
     return 0;
 }
 
+int Recover()
+{
+    var folder = Path.GetFullPath(args.Length > 1 && !args[1].StartsWith("--") ? args[1] : ".");
+    var live = TraceRecovery.FindLiveFolders(folder);
+    if (live.Count == 0) { Console.WriteLine($"No live traces under {folder}."); return 0; }
+    foreach (var dir in live)
+    {
+        // <output>/.live/<test>_<time> -> write next to the other traces in <output>.
+        var output = Path.GetDirectoryName(Path.GetDirectoryName(dir)!)!;
+        try
+        {
+            foreach (var f in TraceRecovery.Recover(dir, output, args.Contains("--keep"))) Console.WriteLine(f);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException || ex is InvalidDataException)
+        {
+            Console.Error.WriteLine($"Could not recover {dir}: {ex.Message}");
+        }
+    }
+    return 0;
+}
+
+int Tail()
+{
+    var folder = Path.GetFullPath(args.Length > 1 && !args[1].StartsWith("--") ? args[1] : ".");
+    var follow = args.Contains("--follow");
+    string? watching = null;
+    while (true)
+    {
+        var live = TraceRecovery.FindLiveFolders(folder);
+        var dir = watching != null && live.Contains(watching) ? watching : live.FirstOrDefault();
+        if (dir == null)
+        {
+            Console.WriteLine(watching != null ? "The test finished (its live trace is gone). See wintrace list." : $"No test running under {folder} (no live traces).");
+            return 0;
+        }
+        watching = dir;
+        var st = TraceRecovery.Read(dir);
+        var now = DateTimeOffset.UtcNow;
+        string Ago(DateTimeOffset t) { var d = now - t; return d.TotalMinutes >= 1 ? $"{(int)d.TotalMinutes} min {d.Seconds:00} s" : $"{d.TotalSeconds:F0} s"; }
+        if (follow && !Console.IsOutputRedirected) try { Console.Clear(); } catch (IOException) { }
+        Console.WriteLine($"{st.Meta.Title}   running for {Ago(st.Meta.Started)}   {st.Events.Count(e => e.Kind != "log")} steps done");
+        foreach (var kv in st.Meta.Context) Console.WriteLine($"  {kv.Key}: {kv.Value}");
+        if (st.Current != null)
+            Console.WriteLine($"NOW  {(st.Current.Group != null ? st.Current.Group + " | " : "")}{st.Current.Name} {st.Current.Target}   for {Ago(st.Current.Start)}");
+        else
+            Console.WriteLine($"Between steps; last activity {Ago(new DateTimeOffset(st.LastWriteUtc, TimeSpan.Zero))} ago");
+        var errors = st.Events.Where(e => e.Kind == "error").ToList();
+        if (errors.Count > 0) Console.WriteLine($"Errors so far: {errors.Count}; last: #{errors[^1].Seq} {errors[^1].Name} {errors[^1].Target} — {errors[^1].Error}");
+        foreach (var w in TraceAnalysis.EnvironmentWarnings(st.Meta)) Console.WriteLine("Environment: " + w);
+        Console.WriteLine("Last steps:");
+        foreach (var e in st.Events.Skip(Math.Max(0, st.Events.Count - 8)))
+            Console.WriteLine($"  {(e.Kind == "error" ? "FAIL" : e.Kind == "log" ? "log " : "ok  ")} #{e.Seq,-4} {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {(e.Origin == "web" ? "[web] " : "")}{e.Name} {e.Target}");
+        if (!follow) return 0;
+        Thread.Sleep(2000);
+    }
+}
+
 // Azure Pipelines logging-command escaping for message text.
 static string AzdoEscape(string s) => s.Replace("%", "%AZP25").Replace("\r", "%0D").Replace("\n", "%0A");
 
@@ -311,6 +382,18 @@ int Snapshot()
         AutomationName = Opt("--automation-name"),
         WantScreenshot = Opt("--screenshot") != null
     };
+    for (var i = 1; i < args.Length - 1; i++)
+    {
+        if (args[i] != "--verify") continue;
+        var loc = LiveSnapshot.Locator.Parse(args[i + 1]);
+        if (loc == null)
+        {
+            Console.Error.WriteLine($"Cannot read the locator \"{args[i + 1]}\". Use accessibilityid=<id>, name=<name>, classname=<class>, xpath=<xpath> or By.Name: <name>.");
+            return 2;
+        }
+        request.Verify.Add(loc);
+    }
+    request.SkipSource = request.Verify.Count > 0 && Opt("--find") == null && Opt("--out") == null && !args.Contains("--tree");
     if (request.Session == null && request.Window == null && !request.Root)
     {
         Console.Error.WriteLine("Choose what to read: --window <title>, --session <id> or --root.\n\n" + Usage);
@@ -335,12 +418,28 @@ int Snapshot()
             sessionId = result.SessionId,
             elementCount = elements.Count,
             matches = matches?.Select(m => new { score = Math.Round(m.Score, 2), element = Item(m.Element) }),
-            elements = find == null ? elements.Select(Item) : null
+            verify = result.Verifications.Count == 0 ? null : result.Verifications.Select(v => new
+            {
+                locator = v.Locator.ToString(),
+                count = v.Native.Count, ms = v.Native.Ms, error = v.Native.Error,
+                xpath = v.XPath == null ? null : new { value = v.XPath.Value, count = v.XPath.Count, ms = v.XPath.Ms, error = v.XPath.Error },
+                verdict = v.Verdict
+            }),
+            elements = find == null && !request.SkipSource ? elements.Select(Item) : null
         }, jsonOptions));
         return 0;
     }
 
-    if (matches != null)
+    foreach (var v in result.Verifications)
+    {
+        string Count(LiveSnapshot.Measurement m) => m.Count < 0 ? "error" : m.Count == 1 ? "1 match" : $"{m.Count} matches";
+        Console.WriteLine($"{v.Locator.Strategy} = \"{v.Locator.Value}\": {Count(v.Native)}, {v.Native.Ms:F0} ms");
+        if (v.XPath != null) Console.WriteLine($"  as XPath {v.XPath.Value}: {Count(v.XPath)}, {v.XPath.Ms:F0} ms");
+        Console.WriteLine("  -> " + v.Verdict);
+    }
+    if (result.Verifications.Count > 0 && (matches != null || !request.SkipSource)) Console.WriteLine();
+    if (request.SkipSource) { /* only verifying */ }
+    else if (matches != null)
     {
         Console.WriteLine(matches.Count == 0 ? $"No element matches or resembles \"{find}\" ({elements.Count} elements in the tree)."
             : $"Elements matching \"{find}\" ({elements.Count} in the tree):");
@@ -365,7 +464,8 @@ int Snapshot()
 int Summary(LoadedTrace t)
 {
     var failed = TestFailed(t);
-    var errors = RootErrors(t);
+    var misses = t.Events.Where(e => TraceAnalysis.IsRecoveredMiss(e, t.Meta, t.Events)).Select(e => e.Seq).ToHashSet();
+    var errors = RootErrors(t).Where(e => !misses.Contains(e.Seq)).ToList();
     if (json)
     {
         Console.WriteLine(JsonSerializer.Serialize(new
@@ -373,7 +473,9 @@ int Summary(LoadedTrace t)
             title = t.Meta.Title,
             framework = t.Meta.Framework,
             started = t.Meta.Started,
-            outcome = failed ? "failed" : "passed",
+            outcome = t.Meta.Outcome == "aborted" ? "aborted" : failed ? "failed" : "passed",
+            context = t.Meta.Context,
+            missedProbes = misses.Count,
             outcomeReported = t.Meta.Outcome != null,
             failureMessage = t.Meta.FailureMessage,
             passed = !failed,
@@ -386,7 +488,10 @@ int Summary(LoadedTrace t)
                 durationMs = Math.Round(e.DurationMs, 1),
                 captureMs = e.CaptureMs is double c ? Math.Round(c, 1) : (double?)null,
                 snapshotMs = e.SnapshotMs is double sn ? Math.Round(sn, 1) : (double?)null,
-                e.Error
+                e.Error,
+                minor = e.Minor == true ? true : (bool?)null,
+                missedProbe = misses.Contains(e.Seq) ? true : (bool?)null,
+                e.Diagnostics
             })
         }, jsonOptions));
         return failed ? 1 : 0;
@@ -399,6 +504,8 @@ int Summary(LoadedTrace t)
     {
         var status = e.Kind == "log" ? "log " : e.Kind != "error" ? "ok  " : failed ? "FAIL" : "rcvd";
         var capture = e.CaptureMs is double c && c >= 1000 ? $"  (capture {c / 1000:F1}s)" : "";
+        if (e.Diagnostics != null && e.Diagnostics.TryGetValue("appResponding", out var resp) && resp == "no") capture += "  [app not responding]";
+        if (e.Kind == "error" && TraceAnalysis.IsRecoveredMiss(e, t.Meta, t.Events)) { status = "miss"; capture += "  [probe missed, recovered]"; }
         Console.WriteLine($"{status} #{e.Seq,-3} +{Offset(t, e),7:F2}s {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {(e.Origin == "web" ? "[web] " : "")}{e.Name} {e.Target}{capture}");
         if (e.Error != null) Console.WriteLine("       " + (e.CauseSeq is int cause ? $"(failed in #{cause}) " : "") + e.Error);
     }
@@ -423,12 +530,11 @@ int Inspect(LoadedTrace t)
     {
         // The step where the test failed: the last step error (nested failures report their innermost step);
         // a passed test shows its first recovered error, else the last step.
-        var errors = RootErrors(t);
-        e = TestFailed(t) ? errors.LastOrDefault() : errors.FirstOrDefault();
-        e ??= t.Events.LastOrDefault(x => x.Kind != "log") ?? t.Events.Last();
+        // Probes that missed and were recovered (minor steps) are skipped.
+        e = TraceAnalysis.FailureStep(t.Meta, t.Events, out _) ?? t.Events.Last();
     }
 
-    var failedOutsideSteps = TestFailed(t) && RootErrors(t).Count == 0;
+    TraceAnalysis.FailureStep(t.Meta, t.Events, out var failedOutsideSteps);
     // A step that failed because a nested step failed shares that step's capture.
     var captured = TraceAnalysis.CaptureFor(e, t.Events);
     var detailFrom = e.CauseSeq is int causeSeq ? t.Events.FirstOrDefault(x => x.Seq == causeSeq) ?? e : e;
@@ -443,6 +549,8 @@ int Inspect(LoadedTrace t)
     var locator = e.Kind == "error" ? TraceAnalysis.GuessLocator(detailFrom, t.Events) : null;
     var similar = locator != null ? TraceAnalysis.FindSimilar(snapshot, locator) : Array.Empty<SimilarElement>();
     var elements = TraceAnalysis.ParseTree(snapshot);
+    var otherWindows = elements.Where(x => x.Tag == "ProcessWindow").ToList();
+    var previousStep = t.Events.Where(x => x.Seq < e.Seq && x.Kind != "log").OrderByDescending(x => x.Seq).FirstOrDefault();
 
     var extracted = new List<string>();
     var extractDir = Opt("--extract");
@@ -482,6 +590,9 @@ int Inspect(LoadedTrace t)
             {
                 score = Math.Round(s.Score, 2), element = s.Element.Describe(), locator = s.Element.SuggestedLocator()
             }),
+            diagnostics = e.Diagnostics ?? captured.Diagnostics,
+            previousStep = previousStep == null ? null : new { previousStep.Seq, previousStep.Name, previousStep.Target, previousStep.Diagnostics },
+            otherWindows = otherWindows.Select(w => new { title = w.Name, className = w.ClassName, x = w.X, y = w.Y, width = w.Width, height = w.Height }),
             uiTree = args.Contains("--tree") ? TraceAnalysis.CompactTree(snapshot) : null,
             uiTreeElements = elements.Count
         }, jsonOptions));
@@ -504,6 +615,29 @@ int Inspect(LoadedTrace t)
     if (e.Error != null) Console.WriteLine($"Error:    {e.Error}");
     if (e.CauseSeq != null) Console.WriteLine($"Cause:    failed in nested step #{e.CauseSeq} (details and capture below are from that step)");
     if (captured != e && captured != detailFrom) Console.WriteLine($"Capture:  screenshot and UI tree taken by the enclosing step #{captured.Seq} ({captured.Name})");
+    var diag = e.Diagnostics ?? captured.Diagnostics;
+    if (diag != null && diag.Count > 0)
+        Console.WriteLine("Observed: " + string.Join(", ", diag.Select(kv => kv.Key switch
+        {
+            "appResponding" => kv.Value == "no" ? "app NOT RESPONDING" : "app responding",
+            "appCpu" => "app CPU " + kv.Value,
+            "appRunning" => kv.Value == "no" ? "app process EXITED" : "app running",
+            "screen" => "screen " + kv.Value,
+            _ => kv.Key + " " + kv.Value
+        })));
+    if (e.Kind == "error" && previousStep?.Diagnostics is { } pd)
+    {
+        if (pd.TryGetValue("screen", out var ps) && ps == "unchanged")
+            Console.WriteLine($"Previous: #{previousStep.Seq} {previousStep.Name} {previousStep.Target} left the screen unchanged (its action may not have taken effect)");
+        if (pd.TryGetValue("appResponding", out var pr) && pr == "no")
+            Console.WriteLine($"Previous: #{previousStep.Seq} ended with the app not responding");
+    }
+    if (otherWindows.Count > 0)
+    {
+        Console.WriteLine("Other windows of the app (popups, dropdowns, dialogs):");
+        foreach (var w in otherWindows)
+            Console.WriteLine($"  \"{w.Name}\" class {w.ClassName} at {w.X},{w.Y} {w.Width}x{w.Height}");
+    }
     if (detailFrom.ErrorDetail != null) Console.WriteLine("\nStack trace:\n" + detailFrom.ErrorDetail);
 
     if (similar.Count > 0)
