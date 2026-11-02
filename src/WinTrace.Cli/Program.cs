@@ -515,7 +515,8 @@ int Inspect(LoadedTrace t)
     else if (e.Kind == "error" && elements.Count > 0)
         Console.WriteLine(locator == null
             ? "\nNo locator was recorded for this step. Pass the locator as the step target, e.g. Step(\"click\", by.ToString(), ...), to get suggestions."
-            : $"\nNo UI element resembles \"{TraceAnalysis.LocatorValue(locator)}\". The element may not exist yet (add a wait) or be in another window.");
+            : $"\nNo UI element resembles \"{TraceAnalysis.LocatorValue(locator)}\". The element may not exist yet (add a wait), be in another window, or the action that shows it did not happen (a menu or dropdown that did not open)."
+              + (captured.ScreenshotAfter != null ? " The screenshot at the failure shows what was on screen (--extract <dir>)." : ""));
 
     Console.WriteLine();
     Console.WriteLine(e.ScreenshotBefore != null || e.ScreenshotAfter != null

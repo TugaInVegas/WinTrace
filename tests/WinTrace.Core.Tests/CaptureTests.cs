@@ -254,3 +254,40 @@ public class CallSiteCollapseTests
         Assert.NotEqual("CaptureTests.cs:" + waitLine, first);
     }
 }
+
+public class CallSiteAsyncTests
+{
+    // Completes asynchronously, so the test's continuation runs inside this method's completion.
+    static async System.Threading.Tasks.Task UnrelatedPageMethodAsync() { await System.Threading.Tasks.Task.Delay(20); }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Call_site_stops_at_an_async_continuation_boundary()
+    {
+        // No synchronization context (as in MSTest): after the await, this code runs inside the completion of
+        // UnrelatedPageMethodAsync, whose frame is below ours on the stack but did not call the step.
+        var rec = new TraceRecorder();
+        await System.Threading.Tasks.Task.Run(async () =>
+        {
+            await UnrelatedPageMethodAsync();
+            rec.Step("click", "Save", () => { });
+        });
+        var loc = rec.Events[0].Location!;
+        var lines = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "CaptureTests.cs"));
+        var unrelated = lines.Select((l, i) => (l, i: i + 1)).First(x => x.l.Contains("await System.Threading.Tasks.Task.Delay(20)")).i;
+        Assert.DoesNotContain("CaptureTests.cs:" + unrelated, loc);
+    }
+}
+
+public class CallSiteTestEntryTests
+{
+    static class Page { public static void Save(TraceRecorder rec) => rec.Step("click", "Save", () => { }); }
+
+    [Fact]
+    public void Call_site_ends_at_the_test_method()
+    {
+        var rec = new TraceRecorder(null, new TraceOptions { CallSiteDepth = 10 });
+        Page.Save(rec);
+        var parts = rec.Events[0].Location!.Split(" ← ");
+        Assert.Equal(2, parts.Length);   // Page.Save ← this test; no xUnit/reflection frames past it
+    }
+}
