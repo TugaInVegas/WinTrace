@@ -102,6 +102,9 @@ Windows-only. Target `net8.0-windows`, or declare the assembly Windows-only:
 - "did not return a session id" with Appium 2: pass `--automation-name` (for example `NovaWindows`).
 - "No top-level window": use the title shown in the window's title bar (exact, or a part of it), or `--root`.
 - `--root` can be slow on WinAppDriver with many windows open: prefer `--window`.
+- `--window` finds the window through Win32 when the driver runs on the same machine (milliseconds). With a remote
+  driver, or a title Win32 does not find, it searches the driver's desktop root, which can take tens of seconds on a
+  busy desktop; `--session <id>` avoids the search entirely.
 
 ## `ffmpeg` was not found
 

@@ -176,7 +176,7 @@ int List()
         var step = TraceAnalysis.FailureStep(trace.Meta, trace.Events, out var outside);
         Console.WriteLine($"{(failed ? "FAIL" : "ok  ")}  {file.LastWriteTime:yyyy-MM-dd HH:mm}  {trace.Meta.Title}");
         if (failed)
-            Console.WriteLine("      " + (outside ? "outside steps: " + (trace.Meta.FailureMessage ?? "(no message)")
+            Console.WriteLine("      " + (outside ? (trace.Meta.Outcome == "aborted" ? TraceAnalysis.OutsideStepsText(trace.Meta, trace.Events) : "outside steps: " + (trace.Meta.FailureMessage ?? "(no message)"))
                 : $"#{step?.Seq} {(step?.Origin == "web" ? "[web] " : "")}{step?.Name} {step?.Target} — {step?.Error}"));
         Console.WriteLine("      " + file.FullName);
     }
@@ -305,6 +305,7 @@ int Tail()
         Console.WriteLine("Last steps:");
         foreach (var e in st.Events.Skip(Math.Max(0, st.Events.Count - 8)))
             Console.WriteLine($"  {(e.Kind == "error" ? "FAIL" : e.Kind == "log" ? "log " : "ok  ")} #{e.Seq,-4} {e.DurationMs,7:F0}ms  {e.Group ?? "-"} | {(e.Origin == "web" ? "[web] " : "")}{e.Name} {e.Target}");
+        Console.WriteLine("(Desktop steps only: web steps from Playwright traces are merged when the test finishes.)");
         if (!follow) return 0;
         Thread.Sleep(2000);
     }
@@ -600,8 +601,10 @@ int Inspect(LoadedTrace t)
     }
 
     if (failedOutsideSteps)
-        Console.WriteLine("The test failed outside the recorded steps" + (t.Meta.FailureMessage != null ? ": " + t.Meta.FailureMessage : ".")
+        Console.WriteLine(TraceAnalysis.OutsideStepsText(t.Meta, t.Events) + (t.Meta.FailureMessage != null && t.Meta.Outcome != "aborted" ? ": " + t.Meta.FailureMessage : ".")
             + "\nShowing the last recorded step.\n");
+    if (t.Meta.Outcome == "aborted")
+        Console.WriteLine("Aborted run (recovered from the live trace): web steps and video are added when a test finishes, so this trace has neither.\n");
     foreach (var w in TraceAnalysis.EnvironmentWarnings(t.Meta)) Console.WriteLine("Environment warning: " + w);
     var verdictLabel = e.Kind != "error" ? "" : TestFailed(t) ? "  [FAILED]" : "  [RECOVERED]";
     Console.WriteLine($"Step #{e.Seq} {e.Name}{verdictLabel}");

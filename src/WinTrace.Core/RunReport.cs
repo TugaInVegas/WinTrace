@@ -23,6 +23,8 @@ namespace WinTrace
         public string? Error { get; set; }
         public string? Location { get; set; }
         public bool OutsideSteps { get; set; }
+        /// <summary>The test did not finish (trace recovered from its live copy).</summary>
+        public bool Aborted { get; set; }
         public string? MarkdownPath { get; set; }
         public IReadOnlyList<string> EnvironmentWarnings { get; set; } = Array.Empty<string>();
         /// <summary>Test context from the trace (<c>TraceRecorder.SetContext</c>).</summary>
@@ -155,7 +157,9 @@ namespace WinTrace
                 report.Clusters.Add(new FailureCluster
                 {
                     Signature = g.Key,
-                    Description = first.OutsideSteps ? "Failed outside the recorded steps: " + (first.Error ?? "(no message)") : $"{first.FailingStep} — {first.Error}",
+                    Description = first.OutsideSteps
+                        ? (first.Aborted ? "Did not finish (aborted) between steps" : "Failed outside the recorded steps: " + (first.Error ?? "(no message)"))
+                        : $"{first.FailingStep} — {first.Error}",
                     Tests = g.OrderBy(e => e.Title).ToList()
                 });
             }
@@ -207,6 +211,7 @@ namespace WinTrace
                 TracePath = path,
                 Failed = failed,
                 OutsideSteps = failed && outside,
+                Aborted = t.Meta.Outcome == "aborted",
                 MarkdownPath = File.Exists(md) ? md : null,
                 EnvironmentWarnings = TraceAnalysis.EnvironmentWarnings(t.Meta),
                 Context = t.Meta.Context ?? new Dictionary<string, string>()
@@ -214,8 +219,8 @@ namespace WinTrace
             if (!failed) return entry;
             if (outside)
             {
-                entry.Error = t.Meta.FailureMessage;
-                entry.Signature = "outside|" + Normalize(t.Meta.FailureMessage);
+                entry.Error = t.Meta.Outcome == "aborted" ? TraceAnalysis.OutsideStepsText(t.Meta, t.Events) : t.Meta.FailureMessage;
+                entry.Signature = t.Meta.Outcome == "aborted" ? "aborted" : "outside|" + Normalize(t.Meta.FailureMessage);
             }
             else if (step != null)
             {
@@ -246,27 +251,20 @@ namespace WinTrace
 
             if (entry.Failed)
             {
-                for (var i = 0; ; i++)
+                // Compare desktop with desktop and web with web: the two kinds interleave differently from run to run, and
+                // a passing run often has no web steps at all (Playwright traces are usually kept only for failures).
+                // An origin that the passing run does not have is left out.
+                var found = new List<(int Seq, string Text)>();
+                foreach (var origin in now.Select(e => e.Origin).Distinct())
                 {
-                    if (i >= now.Count)
-                    {
-                        entry.Divergence = i >= before.Count
-                            ? "same steps as the last passing run; the failure came after them"
-                            : $"this run stopped after {(i == 0 ? "no steps" : Label(now[i - 1]))}; the last passing run went on with {Label(before[i])}";
-                        break;
-                    }
-                    if (i >= before.Count) { entry.Divergence = $"{Label(now[i])}: the last passing run had no more steps at this point"; break; }
-                    if (Key(now[i]) != Key(before[i]))
-                    {
-                        entry.Divergence = $"{Label(now[i])} here, where the last passing run did {Label(before[i])}";
-                        break;
-                    }
-                    if (now[i].Kind == "error")
-                    {
-                        entry.Divergence = $"{Label(now[i])} failed after {Secs(now[i].DurationMs)}; the same step passed in {Secs(before[i].DurationMs)} in the last passing run (all steps before it matched)";
-                        break;
-                    }
+                    var b = before.Where(e => e.Origin == origin).ToList();
+                    if (b.Count == 0) continue;
+                    var d = Divergence(now.Where(e => e.Origin == origin).ToList(), b);
+                    if (d != null) found.Add(d.Value);
                 }
+                if (found.Count > 0) entry.Divergence = found.OrderBy(f => f.Seq).First().Text;
+                else if (now.Any(e => before.Any(x => x.Origin == e.Origin)))
+                    entry.Divergence = "none in the recorded steps: the same steps as the last passing run, then the failure came after them";
             }
 
             // Match repeated steps by occurrence (the 3rd "click Save" with the 3rd "click Save").
@@ -290,6 +288,24 @@ namespace WinTrace
             }
             entry.SlowerSteps = slower.OrderByDescending(s => s.DurationMs - s.PassingDurationMs).Take(5).ToList();
         }
+
+        // First step where two step lists of the same origin differ, with the current step's seq to order origins.
+        static (int Seq, string Text)? Divergence(List<TraceEvent> now, List<TraceEvent> before)
+        {
+            for (var i = 0; ; i++)
+            {
+                if (i >= now.Count)
+                    return i >= before.Count || now.Count == 0 ? ((int, string)?)null
+                        : (now[i - 1].Seq, $"this run stopped after {Label(now[i - 1])}; the last passing run went on with {Label(before[i])}");
+                if (i >= before.Count) return (now[i].Seq, $"{Label(now[i])}: the last passing run had no more {Kind(now[i])} steps at this point");
+                if (Key(now[i]) != Key(before[i]))
+                    return (now[i].Seq, $"{Label(now[i])} here, where the last passing run did {Label(before[i])}");
+                if (now[i].Kind == "error")
+                    return (now[i].Seq, $"{Label(now[i])} failed after {Secs(now[i].DurationMs)}; the same step passed in {Secs(before[i].DurationMs)} in the last passing run (all {Kind(now[i])} steps before it matched)");
+            }
+        }
+
+        static string Kind(TraceEvent e) => e.Origin == "web" ? "web" : "desktop";
 
         static void Classify(RunReportEntry entry, List<HistoricRun> history)
         {

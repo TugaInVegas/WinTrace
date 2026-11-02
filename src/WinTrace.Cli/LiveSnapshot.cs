@@ -35,6 +35,12 @@ namespace WinTrace.Cli
             public bool WantScreenshot { get; set; }
             /// <summary>Locators to measure in the window: match count and lookup time, native and as XPath.</summary>
             public List<Locator> Verify { get; } = new List<Locator>();
+            /// <summary>
+            /// Finds a top-level window by title and returns its handle, or null. Default: on Windows with a driver on this
+            /// machine, Win32 (milliseconds); otherwise, and when it finds nothing, a search through the driver's desktop
+            /// root session (can take tens of seconds on a busy desktop).
+            /// </summary>
+            public Func<string, long?>? FindWindow { get; set; }
             /// <summary>Skip reading the UI tree (e.g. only verifying locators; the tree can take long on big apps).</summary>
             public bool SkipSource { get; set; }
         }
@@ -117,6 +123,12 @@ namespace WinTrace.Cli
             {
                 string session;
                 if (request.Session != null) session = request.Session;
+                else if (request.Window != null && (request.FindWindow ?? DefaultFinder(baseUrl))?.Invoke(request.Window) is long hwnd && hwnd != 0)
+                {
+                    // Found locally: attach by handle, no desktop root session needed.
+                    session = await CreateSession(client, baseUrl, request, null, "0x" + hwnd.ToString("X", CultureInfo.InvariantCulture));
+                    created.Add(session);
+                }
                 else
                 {
                     var root = await CreateSession(client, baseUrl, request, "Root", null);
@@ -172,6 +184,18 @@ namespace WinTrace.Cli
                 .OrderByDescending(s => s.Score)
                 .Take(max)
                 .ToList();
+        }
+
+        static Func<string, long?>? DefaultFinder(string baseUrl)
+        {
+            if (!OperatingSystem.IsWindows()) return null;
+            try
+            {
+                var host = new Uri(baseUrl).Host;
+                if (host != "localhost" && host != "127.0.0.1" && host != "[::1]" && host != "::1") return null;
+            }
+            catch (UriFormatException) { return null; }
+            return TopLevelWindows.Find;
         }
 
         static async Task<Verification> VerifyAsync(HttpClient client, string sessionUrl, Locator locator)

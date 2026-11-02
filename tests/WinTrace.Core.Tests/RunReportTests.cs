@@ -186,4 +186,53 @@ public class RunComparisonTests
         Assert.Null(t.Events[0].ScreenshotAfter);
         Assert.Empty(t.Resources);
     }
+
+    static TraceEvent Web(int seq, string name, string target, double ms, string? error = null)
+    {
+        var e = Ev(seq, name, target, ms, error);
+        e.Origin = "web";
+        return e;
+    }
+
+    [Fact]
+    public void Web_steps_are_ignored_when_the_passing_run_has_none()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "wintrace-compare", Guid.NewGuid().ToString("N"));
+        var before = Path.Combine(root, "run1");
+        Write(before, "Mixed", "passed", Ev(1, "click", "By.Name: Login", 300), Ev(2, "click", "By.Name: Orders", 300));
+        var now = Path.Combine(root, "current");
+        var failed = Write(now, "Mixed", "failed",
+            Web(1, "goto", "https://example.test", 500), Ev(2, "click", "By.Name: Login", 300), Web(3, "click", "getByText('Send')", 200),
+            Ev(4, "click", "By.Name: Orders", 10000, "not found"));
+        var report = RunReport.Build(now, new[] { failed }, new[] { RunReport.ReadHistoricRun("run1", Directory.GetFiles(before, "*.zip"), null) });
+        var d = report.Entries[0].Divergence!;
+        Assert.DoesNotContain("[web]", d);
+        Assert.Contains("#4 click By.Name: Orders failed after 10.0 s", d);
+    }
+
+    [Fact]
+    public void Each_origin_is_compared_with_the_same_origin()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "wintrace-compare", Guid.NewGuid().ToString("N"));
+        var before = Path.Combine(root, "run1");
+        Write(before, "Mixed", "passed", Web(1, "goto", "https://example.test", 500), Ev(2, "click", "By.Name: Login", 300), Web(3, "click", "getByText('Send')", 200));
+        var now = Path.Combine(root, "current");
+        // Desktop step first this time (different interleaving), then the web part differs.
+        var failed = Write(now, "Mixed", "failed",
+            Ev(1, "click", "By.Name: Login", 300), Web(2, "goto", "https://example.test", 500), Web(3, "click", "getByText('Cancel')", 200, "timeout"));
+        var report = RunReport.Build(now, new[] { failed }, new[] { RunReport.ReadHistoricRun("run1", Directory.GetFiles(before, "*.zip"), null) });
+        Assert.Contains("#3 [web] click getByText('Cancel') here, where the last passing run did #3 [web] click getByText('Send')", report.Entries[0].Divergence);
+    }
+
+    [Fact]
+    public void Aborted_run_between_steps_says_where_it_stopped()
+    {
+        var meta = new TraceMetadata { Title = "T", Started = DateTimeOffset.UtcNow, Outcome = "aborted" };
+        var events = new List<TraceEvent> { Ev(1, "click", "By.Name: A", 100), Ev(2, "click", "By.Name: B", 100) };
+        Assert.Equal("The run stopped after step #2 click By.Name: B; no step was running", TraceAnalysis.OutsideStepsText(meta, events));
+        var md = TraceReport.Markdown(meta, events, _ => null);
+        Assert.Contains("The run stopped after step #2 click By.Name: B; no step was running. The last recorded step was:", md);
+        Assert.Contains("Web steps (merged Playwright traces) and the video are added when a test finishes", md);
+        Assert.DoesNotContain("assertion", md);
+    }
 }

@@ -139,7 +139,9 @@ wintrace recover TestResults/WinTrace          # every abandoned live trace unde
 ```
 
 It writes `<test>_<time>_aborted.zip` (+ `.html`, `.md`) with outcome *aborted* and the step that was running marked
-as *Unfinished*. To do it automatically at the start of the next run (for example in `[AssemblyInitialize]`):
+as *Unfinished* (or, when it stopped between steps, the last step it completed). Web steps from Playwright traces and
+the video are added when a test finishes, so an aborted trace has neither; `wintrace tail` likewise shows desktop
+steps only. To do it automatically at the start of the next run (for example in `[AssemblyInitialize]`):
 
 ```csharp
 TraceSession.RecoverAbandoned("TestResults/WinTrace");   // returns the files written
