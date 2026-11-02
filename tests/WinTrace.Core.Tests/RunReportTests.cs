@@ -102,3 +102,88 @@ public class RunReportTests
         Assert.Contains("Pass `--trx`", md);
     }
 }
+
+public class RunComparisonTests
+{
+    sealed class FakeSource : ITraceSource
+    {
+        public byte[]? CaptureScreenshot() => new byte[] { 0x89, 0x50, 0x4E, 0x47, 7 };
+        public string? CaptureSnapshot() => "<Window Name=\"Sample App\"/>";
+    }
+
+    static TraceEvent Ev(int seq, string name, string target, double ms, string? error = null) => new TraceEvent
+    {
+        Seq = seq, Kind = error != null ? "error" : "action", Name = name, Target = target, DurationMs = ms, Error = error,
+        Start = DateTimeOffset.UtcNow.AddSeconds(seq)
+    };
+
+    static string Write(string dir, string test, string outcome, params TraceEvent[] events)
+    {
+        Directory.CreateDirectory(dir);
+        var meta = new TraceMetadata { Title = test, Started = DateTimeOffset.UtcNow, Outcome = outcome };
+        return TraceArchive.Write(Path.Combine(dir, $"{test}_20261102_100000_{outcome}.zip"), meta, events, Array.Empty<KeyValuePair<string, byte[]>>());
+    }
+
+    [Fact]
+    public void Failed_test_is_compared_with_its_last_passing_run()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "wintrace-compare", Guid.NewGuid().ToString("N"));
+        var before = Path.Combine(root, "run1");
+        Write(before, "Orders", "passed",
+            Ev(1, "click", "By.Name: Orders", 300), Ev(2, "click", "By.Name: New order", 1700), Ev(3, "click", "By.Name: Customer dropdown", 200),
+            Ev(4, "click", "By.Name: First customer", 150));
+        Write(before, "Invoices", "passed", Ev(1, "click", "By.Name: Invoices", 400), Ev(2, "wait", "Invoice dialog", 1700));
+
+        var now = Path.Combine(root, "current");
+        var failed = Write(now, "Orders", "failed",
+            Ev(1, "click", "By.Name: Orders", 320), Ev(2, "click", "By.Name: New order", 28000), Ev(3, "click", "By.Name: Customer dropdown", 210),
+            Ev(4, "find", "By.Name: First customer", 10000, "not found"));
+        var passed = Write(now, "Invoices", "passed", Ev(1, "click", "By.Name: Invoices", 380), Ev(2, "wait", "Invoice dialog", 28000));
+
+        var history = new List<HistoricRun> { RunReport.ReadHistoricRun("run1", Directory.GetFiles(before, "*.zip"), null) };
+        var report = RunReport.Build(now, new[] { failed, passed }, history);
+
+        var orders = report.Entries.Single(e => e.Title == "Orders");
+        Assert.Equal("run1", orders.ComparedWith);
+        Assert.Equal("new", orders.History);
+        Assert.Contains("#4 find By.Name: First customer here, where the last passing run did #4 click By.Name: First customer", orders.Divergence);
+        Assert.Equal(2, Assert.Single(orders.SlowerSteps).Seq);
+
+        var invoices = report.Entries.Single(e => e.Title == "Invoices");
+        Assert.Null(invoices.Divergence);
+        Assert.Equal(28000, Assert.Single(invoices.SlowerSteps).DurationMs);
+
+        var md = report.ToMarkdown();
+        Assert.Contains("Compared with the last passing run:", md);
+        Assert.Contains("## Slower than the last passing run", md);
+        Assert.Contains("| Invoices | #2 wait Invoice dialog | 28.0 s | 1.7 s | run1 |", md);
+    }
+
+    [Fact]
+    public void Same_steps_until_the_failure_reports_the_step_that_passed_before()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "wintrace-compare", Guid.NewGuid().ToString("N"));
+        var before = Path.Combine(root, "run1");
+        Write(before, "T", "passed", Ev(1, "click", "By.Name: A", 100), Ev(2, "click", "By.Name: B", 900));
+        var now = Path.Combine(root, "current");
+        var failed = Write(now, "T", "failed", Ev(1, "click", "By.Name: A", 100), Ev(2, "click", "By.Name: B", 10000, "timeout"));
+        var report = RunReport.Build(now, new[] { failed }, new[] { RunReport.ReadHistoricRun("run1", Directory.GetFiles(before, "*.zip"), null) });
+        Assert.Contains("failed after 10.0 s; the same step passed in 0.9 s", report.Entries[0].Divergence);
+    }
+
+    [Fact]
+    public void Passed_summary_has_steps_but_no_screenshots()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wintrace-compare", Guid.NewGuid().ToString("N"));
+        var s = new TraceSession("Light", new FakeSource(), dir) { SavePassedSummary = true };
+        s.Recorder.Step("click", "By.Name: Save", () => { });
+        var files = s.Finish(false);
+        var zip = Assert.Single(files);
+        Assert.EndsWith("_passed.zip", zip);
+        var t = TraceReader.Read(zip, null);
+        Assert.Equal("passed", t.Meta.Outcome);
+        Assert.Single(t.Events);
+        Assert.Null(t.Events[0].ScreenshotAfter);
+        Assert.Empty(t.Resources);
+    }
+}

@@ -49,6 +49,7 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 #filters{padding:8px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}#filters input{flex:1;min-width:140px}
 .seg-btns{display:flex}.seg-btns button{border-radius:0;font-size:12px}.seg-btns button:first-child{border-radius:6px 0 0 6px}
 .seg-btns button:last-child{border-radius:0 6px 6px 0}.seg-btns button+button{border-left:0}.seg-btns button[aria-pressed=true]{background:var(--sel);color:var(--acc)}
+button.tog{font-size:12px;margin-left:6px}button.tog[aria-pressed=true]{background:var(--sel);color:var(--acc)}
 #list{overflow:auto;flex:1}
 .grp{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--mut);background:var(--panel);border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
 .grp .car{transition:transform .15s;display:inline-block}.grp.closed .car{transform:rotate(-90deg)}
@@ -57,6 +58,7 @@ pre{background:var(--panel);border:1px solid var(--line);padding:10px;overflow:a
 .ev .st{font-weight:700;text-align:center}.ev.action .st{color:var(--ok)}.ev.error .st{color:var(--err)}.ev.log .st{color:var(--log)}
 .ev .n{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev.error .n{color:var(--err)}.ev.recovered .st,.ev.recovered .n{color:var(--warn)}.ev.log .n{font-weight:400;color:var(--mut);white-space:normal}
 .ev .d{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.ev .bdg{font-size:11px;font-weight:400;margin-left:6px;padding:0 6px;border-radius:8px;border:1px solid var(--warn);color:var(--warn)}.ev .bdg.bad{border-color:var(--err);color:var(--err)}
 .ev .t{grid-column:2/4;color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)}
 .ev .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--acc);opacity:.35}
 #main{flex:1;overflow:auto;min-width:0}#step{min-width:0;max-width:100%}
@@ -94,7 +96,7 @@ h3{font-size:13px;margin:18px 0 8px;color:var(--mut);text-transform:uppercase;le
 .loc .why{font-size:11px;color:var(--mut);white-space:nowrap}
 /* overlays */
 .overlay{position:fixed;inset:0;z-index:50;background:#000c;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px}
-.overlay[hidden]{display:none}.overlay img{max-width:100%;max-height:calc(100% - 50px);object-fit:contain;background:#fff}
+.overlay[hidden],.ev[hidden],.grp[hidden]{display:none}.overlay img{max-width:100%;max-height:calc(100% - 50px);object-fit:contain;background:#fff}
 .lbbar{display:flex;gap:10px;align-items:center;color:#fff;margin-top:10px}.lbbar button{background:#ffffff22;color:#fff;border-color:#ffffff44}
 .dialog{background:var(--bg);color:var(--fg);border-radius:10px;padding:18px 22px;max-width:440px;width:100%}
 .dialog h2{margin:0 0 10px;font-size:16px}.dialog td{padding:3px 12px 3px 0}
@@ -173,9 +175,15 @@ const pwTraces=(D.meta.playwrightTraces||[]).filter(p=>p.src||(p.embedded&&R[p.e
 // Failures caused by a nested step's failure share its capture and are not counted twice.
 const rootErrors=errors.filter(e=>!e.causeSeq);
 // The outcome reported by the test framework wins; old traces fall back to "any step failed".
-const failed=D.meta.outcome?D.meta.outcome==='failed':rootErrors.length>0;
+const failed=D.meta.outcome?D.meta.outcome!=='passed':rootErrors.length>0;
+const aborted=D.meta.outcome==='aborted';
 const isRecovered=e=>!failed&&e.kind==='error';
-const finalErr=failed?rootErrors[rootErrors.length-1]:null;
+// Minor steps (Capture.None probes, Playwright internal queries) are noise unless the test failed in them.
+const lastStep=[...EV].reverse().find(e=>e.kind!=='log');
+const endedTest=e=>EV.some(x=>x.causeSeq===e.seq)||(lastStep&&lastStep.seq===e.seq);
+const isNoise=e=>!!e.minor&&!(failed&&e.kind==='error'&&endedTest(e));
+const realErrors=rootErrors.filter(e=>!isNoise(e));
+const finalErr=failed?realErrors[realErrors.length-1]||null:null;
 // Video segments, embedded in the report (base64) or as files next to it.
 const segs=(D.meta.videos||[]).filter(v=>v.src||(v.embedded&&R[v.embedded]))
   .map(v=>({v,start:Date.parse(v.started),dur:v.durationSeconds??null,url:null})).sort((a,b)=>a.start-b.start);
@@ -186,15 +194,17 @@ document.title=(failed?'✗ ':'')+(D.meta.title||'WinTrace')+' · WinTrace';
 $('#title').textContent=D.meta.title||'WinTrace';
 const steps=EV.filter(e=>e.kind!=='log').length;
 $('#chips').innerHTML=[
-  failed?`<span class="chip bad">failed</span>`:`<span class="chip good">passed</span>`,
-  failed&&rootErrors.length?`<span class="chip bad">${rootErrors.length} step error${rootErrors.length===1?'':'s'}</span>`:'',
+  aborted?`<span class="chip bad" title="The test did not finish; recovered from the live trace">aborted</span>`:failed?`<span class="chip bad">failed</span>`:`<span class="chip good">passed</span>`,
+  failed&&realErrors.length?`<span class="chip bad">${realErrors.length} step error${realErrors.length===1?'':'s'}</span>`:'',
+  failed&&rootErrors.length>realErrors.length?`<span class="chip" title="Capture.None probes that threw and were handled">${rootErrors.length-realErrors.length} missed probe${rootErrors.length-realErrors.length===1?'':'s'}</span>`:'',
   !failed&&rootErrors.length?`<span class="chip warn" title="Steps that threw, but the test recovered and passed">${rootErrors.length} recovered error${rootErrors.length===1?'':'s'}</span>`:'',
   `<span class="chip">${steps} steps</span>`,`<span class="chip">${fmtMs(total)}</span>`,
   (D.framework??D.meta.framework)?`<span class="chip">${esc(D.framework??D.meta.framework)}</span>`:'',
+  ...Object.entries(D.meta.context||{}).map(([k,v])=>`<span class="chip" title="Test context">${esc(k)}: ${esc(v)}</span>`),
   segs.length?`<span class="chip">video${segs.length>1?' · '+segs.length+' segments':''}</span>`:''].join('');
 if(failed){const b=$('#banner'),e=finalErr;b.hidden=false;
   b.innerHTML=e?`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`
-    :`<b>✗ Test failed outside the recorded steps</b><span>${esc(D.meta.failureMessage||'No failure message was reported.')}</span>`;
+    :`<b>✗ ${aborted?'Test did not finish':'Test failed outside the recorded steps'}</b><span>${esc(D.meta.failureMessage||'No failure message was reported.')}</span>`;
   b.onclick=b.onkeydown=ev=>{if(ev.type==='click'||ev.key==='Enter')select(e?EV.indexOf(e):EV.length-1)}}
 
 // Environment problems that commonly cause UI automation failures (locked screen, non-interactive session...).
@@ -229,17 +239,23 @@ items.forEach(it=>{const e=it.e;
       grpEl.dataset.g=e.group;const g=e.group;grpEl.onclick=()=>{closed.has(g)?closed.delete(g):closed.add(g);applyFilter()};list.appendChild(grpEl)}}
   const d=document.createElement('div');d.className='ev '+e.kind+(isRecovered(e)?' recovered':'');d.setAttribute('role','option');d.id='ev'+e.seq;
   const icon=e.kind==='error'?'✗':e.kind==='log'?'•':'✓';
-  d.innerHTML=`<span class="st">${icon}</span><span class="n">${mixed?`<span class="org${isWeb(e)?' web':''}">${isWeb(e)?'WEB':'DESK'}</span>`:''}${esc(e.name)}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target||e.causeSeq?`<span class="t">${e.causeSeq?`↳ failed in #${e.causeSeq} `:''}${esc(e.target||'')}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
+  const dg=e.diagnostics||{},nxt=EV.find(x=>x.seq>e.seq&&x.kind!=='log');
+  const badges=(dg.appResponding==='no'?'<span class="bdg bad" title="The app window was not responding at the end of this step">not responding</span>':'')
+    +(dg.screen==='unchanged'&&nxt&&nxt.kind==='error'&&!isNoise(nxt)?'<span class="bdg" title="The screenshot after this step equals the one before it, and the next step failed: this action may not have taken effect">no visible change</span>':'')
+    +(isNoise(e)&&e.kind==='error'?'<span class="bdg" title="A probe that missed and was recovered">missed probe</span>':'');
+  d.innerHTML=`<span class="st">${icon}</span><span class="n">${mixed?`<span class="org${isWeb(e)?' web':''}">${isWeb(e)?'WEB':'DESK'}</span>`:''}${esc(e.name)}${badges}</span><span class="d">${e.kind==='log'?'':fmtMs(e.durationMs||0)}</span>${e.target||e.causeSeq?`<span class="t">${e.causeSeq?`↳ failed in #${e.causeSeq} `:''}${esc(e.target||'')}</span>`:''}${e.kind!=='log'?`<span class="bar" style="width:${(e.durationMs||0)/maxDur*100}%"></span>`:''}`;
   d.onclick=()=>select(it.i);list.appendChild(d);it.row=d;it.grp=grpEl});
 
-let mode='all';
+let mode='all',hideNoise=store.get('noise')==='1';
+if(EV.some(isNoise)){$('#fAct').parentElement.insertAdjacentHTML('afterend',`<button id="fNoise" class="tog" aria-pressed="${hideNoise}" title="Hide minor steps (Capture.None probes, Playwright internal queries) that are not part of the failure">Hide noise (${EV.filter(isNoise).length})</button>`);
+  $('#fNoise').onclick=()=>{hideNoise=!hideNoise;store.set('noise',hideNoise?'1':'0');$('#fNoise').setAttribute('aria-pressed',hideNoise);applyFilter()}}
 if(mixed)$('#fAct').insertAdjacentHTML('afterend','<button id="fDesk" aria-pressed="false">Desktop</button><button id="fWeb" aria-pressed="false">Web</button>');
 const modes=[['fAll','all'],['fErr','err'],['fAct','act'],['fDesk','desk'],['fWeb','web']];
 const setMode=m=>{mode=m;modes.forEach(([id,v])=>{const b=$('#'+id);if(b)b.setAttribute('aria-pressed',m===v)});applyFilter()};
 modes.forEach(([id,v])=>{const b=$('#'+id);if(b)b.onclick=()=>setMode(v)});
 function visibleRow(it){const e=it.e,q=$('#q').value.toLowerCase();
   const txt=(e.name+' '+(e.target||'')+' '+(e.error||'')+' '+(e.group||'')+' '+Object.values(e.params||{}).join(' ')).toLowerCase();
-  return (!q||txt.includes(q))&&(mode!=='err'||e.kind==='error')&&!(mode==='act'&&e.kind==='log')
+  return (!q||txt.includes(q))&&!(hideNoise&&isNoise(e))&&(mode!=='err'||e.kind==='error')&&!(mode==='act'&&e.kind==='log')
     &&(mode!=='web'||isWeb(e))&&(mode!=='desk'||!isWeb(e))}
 function applyFilter(){
   items.forEach(it=>{const ok=visibleRow(it);const hiddenByGroup=!!it.e.group&&[...closed].some(g=>it.e.group===g||it.e.group.startsWith(g+' / '));
@@ -261,7 +277,7 @@ function select(i){if(i<0||i>=items.length)return;
   const icon=isRecovered(e)?'<span style="color:var(--warn)">✗</span>':e.kind==='error'?'<span class="err">✗</span>':e.kind==='log'?'<span class="mut">•</span>':'<span style="color:var(--ok)">✓</span>';
   $('#stephead').innerHTML=`<h2>${icon} ${esc(e.name)} <span class="seq">#${e.seq}</span></h2>
     ${e.target?`<div class="target"><code>${esc(e.target)}</code><button id="cpTarget">Copy</button></div>`:''}
-    <div class="metaline">${isWeb(e)?'<span class="org web">WEB · Playwright</span>':''}${e.location?`<span title="Source location of the call">at ${esc(e.location)}</span>`:''}${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}${e.captureMs?`<span title="Screenshots and UI snapshot, not included in the duration">Capture ${fmtMs(e.captureMs)}${e.snapshotMs?` (UI tree ${fmtMs(e.snapshotMs)})`:''}</span>`:''}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
+    <div class="metaline">${isWeb(e)?'<span class="org web">WEB · Playwright</span>':''}${e.location?`<span title="Source location of the call">at ${esc(e.location)}</span>`:''}${e.group?`<span>Group: ${esc(e.group)}</span>`:''}<span>Start +${fmtMs(off(e))}</span>${e.kind!=='log'?`<span>Duration ${fmtMs(e.durationMs||0)}</span>`:''}${e.captureMs?`<span title="Screenshots and UI snapshot, not included in the duration">Capture ${fmtMs(e.captureMs)}${e.snapshotMs?` (UI tree ${fmtMs(e.snapshotMs)})`:''}</span>`:''}${diagSpans(e)}<span>${esc(new Date(e.start).toLocaleTimeString())}</span></div>
     ${e.error?`<div class="errbox"${isRecovered(e)?' style="color:var(--warn);background:var(--warn-bg)"':''}>${isRecovered(e)?'Recovered: ':''}${esc(e.error)}${e.causeSeq?` <a href="#${e.causeSeq}">(failed in step #${e.causeSeq})</a>`:''}</div>`:''}
     ${isWeb(e)&&pwTraces.length?`<div class="pwbox"><span>DOM snapshot, network and console for this browser step are in the Playwright trace.</span><button class="pwOpen">Open in Playwright Trace Viewer</button></div>`:''}`;
   copyBtn($('#cpTarget'),e.target);
@@ -313,6 +329,13 @@ function renderTab(){const e=items[cur].e,body=$('#tabbody');
 // Where a failure's screenshot and UI tree live: the step, the nested step it failed in, or (when that one captured
 // nothing, e.g. a Capture.None probe) the innermost enclosing step that captured the same failure.
 const hasCap=x=>!!(x&&(x.screenshotAfter||x.snapshot));
+function diagSpans(e){const d=e.diagnostics||{};let h='';
+  if(d.appResponding==='no')h+='<span style="color:var(--err)" title="IsHungAppWindow at the end of the step">App not responding</span>';
+  if(d.appRunning==='no')h+='<span style="color:var(--err)">App process exited</span>';
+  if(d.appCpu)h+=`<span title="CPU used by the app process during the step, relative to all cores">App CPU ${esc(d.appCpu)}</span>`;
+  if(d.screen==='unchanged')h+='<span title="The screenshot after the step equals the one before it">Screen unchanged</span>';
+  for(const[k,v]of Object.entries(d))if(!['appResponding','appRunning','appCpu','screen'].includes(k))h+=`<span>${esc(k)}: ${esc(v)}</span>`;
+  return h}
 function capOf(e){const bySeq=s=>EV.find(x=>x.seq===s);let start=e.causeSeq?bySeq(e.causeSeq)||e:e;if(hasCap(start))return start;
   let cur=start;for(let g=0;g<50;g++){const outer=EV.filter(x=>x.causeSeq===cur.seq).sort((a,b)=>b.seq-a.seq)[0];if(!outer)break;if(hasCap(outer))return outer;cur=outer}return start}
 
@@ -347,7 +370,7 @@ function logsTab(e,body){const logs=items.filter(it=>it.e.kind==='log');
   body.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>select(+tr.dataset.i))}
 
 function infoTab(body){const m=D.meta;
-  body.innerHTML=`<table class="kv"><tr><td>Title</td><td>${esc(m.title)}</td></tr><tr><td>Framework</td><td>${esc(D.framework||m.framework||'—')}</td></tr>
+  body.innerHTML=`<table class="kv"><tr><td>Title</td><td>${esc(m.title)}</td></tr>${Object.entries(m.context||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`).join('')}<tr><td>Framework</td><td>${esc(D.framework||m.framework||'—')}</td></tr>
     <tr><td>Started</td><td>${esc(new Date(m.started).toLocaleString())}</td></tr><tr><td>Stopped</td><td>${m.stopped?esc(new Date(m.stopped).toLocaleString()):'—'}</td></tr>
     <tr><td>Duration</td><td>${fmtMs(total)}</td></tr><tr><td>Outcome</td><td>${failed?'<span class="err">failed</span>':'passed'}${D.meta.outcome?'':' (from step errors; outcome not reported)'}</td></tr>
     ${D.meta.failureMessage?`<tr><td>Failure message</td><td class="mono">${esc(D.meta.failureMessage)}</td></tr>`:''}

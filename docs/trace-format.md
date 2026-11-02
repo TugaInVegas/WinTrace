@@ -21,7 +21,8 @@ trace.zip
 | `title` | string | Test name or title. |
 | `framework` | string | Free text, e.g. driver name. |
 | `started`, `stopped` | ISO 8601 | Trace start and end (UTC). |
-| `outcome` | string? | `passed` or `failed` as reported by the test framework; absent in traces where it was not reported. |
+| `outcome` | string? | `passed` or `failed` as reported by the test framework, or `aborted` for a trace recovered from an unfinished test (`wintrace recover`); absent in traces where it was not reported. |
+| `context` | object | Test context set with `SetContext` (environment, record ids...), string values. |
 | `failureMessage` | string? | Failure message reported with the outcome. |
 | `environment` | object | Desktop environment: `screen`, `monitors`, `scaling`, `session`, `interactive`, `desktop` (input desktop at the start; `Winlogon` = lock screen) and `desktopAtEnd`, when known. |
 | `playwrightTraces` | array | Merged Playwright traces: `{ file, playwrightVersion?, actions }`. |
@@ -44,11 +45,19 @@ trace.zip
 | `errorDetail` | string? | Full exception text with stack trace. |
 | `screenshotBefore`, `screenshotAfter`, `snapshot` | string? | Paths of resources in the zip. Log entries can have a `screenshotAfter`. |
 | `origin` | string? | `web` for events imported from a Playwright trace; absent for WinTrace steps. |
-| `location` | string? | Source location that issued the call: for WinTrace steps, the user frames innermost first (`AuxMethods.cs:120 ← CustomerTests.cs:42`); for web steps, Playwright's call site. |
+| `location` | string? | Source location that issued the call: for WinTrace steps, the user frames innermost first (`UiHelpers.cs:120 ← CustomerTests.cs:42`); for web steps, Playwright's call site. |
 | `causeSeq` | int? | The step failed because a nested step (`seq` = this value) failed with the same exception; it shares that step's capture and is not a separate failure. |
 | `captureMs`, `snapshotMs` | number? | Time spent on screenshots and UI tree for this step, and the UI tree part of it. Not included in `durationMs`. |
+| `diagnostics` | object? | What was observed around the step: `screen` (`unchanged`/`changed`), `appResponding` (`yes`/`no`), `appCpu` (e.g. `93%`), `appRunning`, and keys added by custom sources. |
+| `minor` | bool? | Low-signal step: a `Capture.None` probe or a Playwright internal query (`isVisible`, `queryCount`, ...). Viewers may hide it unless the test failed in it. |
 
-A test failed when `outcome` is `failed`. For traces without `outcome`, readers should treat the test as failed when
+UI trees captured by `AppiumTraceSource` can contain `ProcessWindow` elements at the root: other visible top-level
+windows of the app's process (popups, dropdowns, dialogs), with `Name`, `ClassName`, `NativeWindowHandle` and
+`x`/`y`/`width`/`height`. They are not elements of the attached window and have no locator.
+
+A trace written by `SavePassedSummary` (`*_passed.zip`) has the same format with no resources.
+
+A test failed when `outcome` is `failed` or `aborted`. For traces without `outcome`, readers should treat the test as failed when
 any event has `kind: error` and no `causeSeq`.
 
 Readers should ignore unknown fields: new fields may be added without changing `formatVersion`.

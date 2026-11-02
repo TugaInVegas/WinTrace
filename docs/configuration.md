@@ -4,6 +4,10 @@
 - [TraceOptions](#traceoptions)
 - [Choosing what to capture per step](#choosing-what-to-capture-per-step)
 - [Recording from static helpers](#recording-from-static-helpers)
+- [Test context](#test-context)
+- [Crash-safe recording and live view](#crash-safe-recording-and-live-view)
+- [What the app was doing (step diagnostics)](#what-the-app-was-doing-step-diagnostics)
+- [Light traces for passed tests](#light-traces-for-passed-tests)
 - [Video](#video)
 - [Smaller screenshots](#smaller-screenshots)
 - [Performance](#performance)
@@ -21,7 +25,8 @@ var session = new TraceSession(testName, source, outputDir: "TestResults/WinTrac
     EmbedVideoInHtml = true,     // default: the HTML is a single file, video included
     WriteMarkdown = true,        // default: also a .md report and the failure screenshot
     EmbedPlaywrightTracesInHtml = true,  // default: merged Playwright traces go inside the HTML
-    SaveRecoveredErrors = false  // default: a passed test is not saved just because a step threw and was recovered
+    SaveRecoveredErrors = false, // default: a passed test is not saved just because a step threw and was recovered
+    SavePassedSummary = false    // default: nothing is written for a passed test (true: a few-KB steps-only trace)
 };
 ```
 
@@ -35,7 +40,7 @@ var session = new TraceSession(testName, source, outputDir: "TestResults/WinTrac
 The outcome you pass to `Finish` is stored in the trace and drives the viewer's passed/failed badge, `wintrace
 summary` and its exit code. Steps that threw in a passed test are shown as *recovered errors*.
 
-File names are `<test name>_<yyyyMMdd_HHmmss>[_failed]` with `.zip`, `.html`, `.md` (summary for people and
+File names are `<test name>_<yyyyMMdd_HHmmss>[_failed|_aborted|_passed]` with `.zip`, `.html`, `.md` (summary for people and
 AI agents) and `.png`/`.jpg` (the screenshot at the failure). Characters that are not valid in
 file names are removed from the test name.
 
@@ -50,7 +55,7 @@ file names are removed from the test name.
 | `Snapshots` | `SnapshotMode.OnError` | When to capture the UI tree: `Off`, `OnError` or `Always`. |
 | `SnapshotTimeout` | none | Stop waiting for a UI tree after this long and record the step without it. The driver may still finish the request before it answers the next command. |
 | `RedactParams` | `password`, `secret`, `token` | Case-insensitive words. A matching parameter name or step target hides the values. |
-| `CaptureCallSite` | `true` | Record which code issued each step (`AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`). Needs PDB files next to the test assemblies. |
+| `CaptureCallSite` | `true` | Record which code issued each step (`UiHelpers.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`). Needs PDB files next to the test assemblies. |
 | `CallSiteDepth` | `3` | How many of your own frames to keep. |
 | `CallSiteSkip` | empty | Type or namespace prefixes to leave out of call sites (helpers you cannot mark with attributes). |
 | `CaptureEnvironment` | `true` | Record screen, display scaling, Remote Desktop or console session, interactive session and whether the screen was locked, at the start and the end. |
@@ -84,6 +89,9 @@ rec.Step("submit form", "toolbar/Submit", Capture.Full, () => Submit());        
 | `Screenshots` | as configured | never |
 | `Full` | as configured | always |
 
+`Capture.None` steps are also marked *minor*: when one throws and the test handles it (a probe that missed), the
+viewer's **Hide noise** button hides it, and the `.md` lists it as *missed (recovered)* rather than as the failure.
+
 For cheap markers, `rec.Log("message")` records a line on the timeline, and
 `rec.Log("message", screenshot: true)` adds one screenshot.
 
@@ -107,6 +115,79 @@ var field = driver.FindElementTraced<WindowsElement>(By.Name("Customer name"));
 field.SendKeysTraced("Ada Lovelace");
 driver.Traced("switch window", "Settings", () => SwitchToSettings());
 ```
+
+## Test context
+
+Record which data a test used, so a failure says it without opening another log:
+
+```csharp
+_trace.Recorder.SetContext("environment", "QA");
+_trace.Recorder.SetContext("customer id", customerId);
+```
+
+Context is shown in the viewer header and Info tab, in the `.md` and in the run report. Keys containing a
+`RedactParams` word (`password`, `secret`, `token`) have their values hidden. Setting a key again replaces it.
+
+## Crash-safe recording and live view
+
+While a test runs, its trace is also written step by step to `<output>/.live/<test>_<time>/` and deleted by
+`Finish`. If the test host crashes, the run times out or is stopped by hand, `Finish` never runs, and that folder
+is what is left. Turn it into a normal trace:
+
+```
+wintrace recover TestResults/WinTrace          # every abandoned live trace under the folder
+```
+
+It writes `<test>_<time>_aborted.zip` (+ `.html`, `.md`) with outcome *aborted* and the step that was running marked
+as *Unfinished*. To do it automatically at the start of the next run (for example in `[AssemblyInitialize]`):
+
+```csharp
+TraceSession.RecoverAbandoned("TestResults/WinTrace");   // returns the files written
+```
+
+The same folder gives a live view of a long test from another console:
+
+```
+wintrace tail TestResults/WinTrace --follow    # current group and step, time in it, errors so far, last steps
+```
+
+Set `TraceSession.LiveRecordingDefault = false` before creating sessions to turn the live copy off. Its cost is one
+small file append per step; screenshots are written once, when taken.
+
+## What the app was doing (step diagnostics)
+
+Many UI test failures are races: a click that lands while the app is busy, a dropdown that never opens. Each step
+records what was observed around it, in `diagnostics`:
+
+| Key | From | Meaning |
+|---|---|---|
+| `screen` | Core | `unchanged` when the screenshot after the step equals the one before it, `changed` otherwise. An action step that left the screen unchanged, followed by a failure, probably did not take effect. |
+| `appResponding` | `AppiumTraceSource` | `no` when Windows considered the app window hung (`IsHungAppWindow`) at the end of the step. |
+| `appCpu` | `AppiumTraceSource` | CPU the app process used during the step, relative to all cores (e.g. `93%`). |
+| `appRunning` | `AppiumTraceSource` | `no` when the app process exited during the step. |
+
+The viewer marks *not responding* steps and a *no visible change* step right before a failure; the `.md` and
+`wintrace inspect` say what was observed at the failing step and the step before it. Steps recorded with
+`Capture.None` skip diagnostics.
+
+`AppiumTraceSource` also adds the **other visible windows of the app's process** (dropdowns, popups, dialogs, which
+are separate top-level windows) to the UI tree it captures, as `ProcessWindow` elements with title, class and
+position, so a trace can tell whether a popup was open. Both run on Windows only and can be turned off:
+
+```csharp
+var source = new AppiumTraceSource(() => Driver) { CollectAppDiagnostics = false, IncludeProcessWindows = false };
+```
+
+Other sources can add their own diagnostics by implementing `IStepDiagnostics` (`BeginStep` before the step,
+`EndStep` returns key/value pairs after it).
+
+## Light traces for passed tests
+
+With `SavePassedSummary = true`, a passed test writes `<test>_<time>_passed.zip`: steps and durations only, no
+screenshots, UI trees or video (a few KB). `wintrace report --history` then compares each test with its last
+passing run: the first step where a failed run differs, and the steps that got much slower
+([run report](run-report.md#comparison-with-the-last-passing-run)). The file is returned by `Finish` but not passed
+to the `attach` callback.
 
 ## Video
 

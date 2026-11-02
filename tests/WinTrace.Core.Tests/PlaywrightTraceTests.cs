@@ -29,6 +29,8 @@ public class PlaywrightTraceTests
         Assert.All(actions.Where(a => a.ScreenshotAfter != null), a => Assert.True(r.Resources.ContainsKey(a.ScreenshotAfter!)));
         Assert.Contains(actions, a => a.ScreenshotAfter != null);
         Assert.Equal("1.63.0", r.PlaywrightVersion);
+        Assert.True(actions[4].Minor);   // waitForTimeout: internal, hidden by "Hide noise"
+        Assert.Null(actions[3].Minor);
     }
 
     [Fact]

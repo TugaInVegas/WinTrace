@@ -28,14 +28,16 @@ namespace WinTrace
             var total = events.Count == 0 ? 0 : events.Max(e => (e.Start - meta.Started).TotalMilliseconds + e.DurationMs);
             var sb = new StringBuilder();
 
-            sb.Append("# ").Append(meta.Title).Append(failed ? " — FAILED" : " — passed").AppendLine().AppendLine();
-            sb.Append("- Outcome: **").Append(failed ? "failed" : "passed").Append("**")
+            var aborted = meta.Outcome == "aborted";
+            sb.Append("# ").Append(meta.Title).Append(aborted ? " — ABORTED" : failed ? " — FAILED" : " — passed").AppendLine().AppendLine();
+            sb.Append("- Outcome: **").Append(aborted ? "aborted (did not finish)" : failed ? "failed" : "passed").Append("**")
               .Append(meta.Outcome == null ? " (from step errors; the test framework did not report it)" : "")
               .Append(!failed && errors.Count > 0 ? $" with {errors.Count} recovered step error(s)" : "").AppendLine();
             if (failed && meta.FailureMessage != null) sb.Append("- Failure message: `").Append(meta.FailureMessage.Replace("`", "'")).AppendLine("`");
             sb.Append("- Started: ").Append(meta.Started.ToString("u", inv)).Append(", duration ").Append(Secs(total))
               .Append(", ").Append(events.Count(e => e.Kind != "log")).Append(" steps")
               .Append(TraceAnalysis.FrameworkLabel(meta, events) is string fw && fw.Length > 0 ? ", " + fw : "").AppendLine();
+            foreach (var kv in meta.Context ?? new Dictionary<string, string>()) sb.Append("- ").Append(kv.Key).Append(": `").Append(kv.Value.Replace("`", "'")).AppendLine("`");
             if (traceFile != null) sb.Append("- Trace: `").Append(traceFile).AppendLine("`");
             if (htmlFile != null) sb.Append("- Viewer: `").Append(htmlFile).AppendLine("` (open in a browser)");
             if (failureImageFile != null) sb.Append("- Screenshot at the failure: `").Append(failureImageFile).AppendLine("`");
@@ -81,6 +83,26 @@ namespace WinTrace
                     sb.AppendLine("<details><summary>Stack trace</summary>").AppendLine().AppendLine("```")
                       .AppendLine(detailFrom.ErrorDetail.TrimEnd()).AppendLine("```").AppendLine().AppendLine("</details>").AppendLine();
 
+                var others = TraceAnalysis.ParseTree(snapshot).Where(e => e.Tag == "ProcessWindow").ToList();
+                if (others.Count > 0)
+                {
+                    sb.AppendLine("Other windows of the app that were open (popups, dropdowns, dialogs):").AppendLine();
+                    foreach (var w in others)
+                        sb.Append("- ").Append(string.IsNullOrEmpty(w.Name) ? "(no title)" : "\"" + w.Name + "\"").Append(" class `").Append(w.ClassName)
+                          .Append("` at ").Append(w.X).Append(',').Append(w.Y).Append(", ").Append(w.Width).Append('x').Append(w.Height).AppendLine();
+                    sb.AppendLine();
+                }
+                var diag = step.Diagnostics ?? captured.Diagnostics;
+                var previous = events.Where(e => e.Seq < step.Seq && e.Kind != "log").OrderByDescending(e => e.Seq).FirstOrDefault();
+                var notes = new List<string>();
+                if (diag != null && diag.TryGetValue("appResponding", out var resp) && resp == "no") notes.Add("the app window was **not responding** at the end of this step");
+                if (diag != null && diag.TryGetValue("appCpu", out var cpu)) notes.Add("app CPU during the step: " + cpu);
+                if (previous?.Diagnostics != null && previous.Diagnostics.TryGetValue("screen", out var scr) && scr == "unchanged")
+                    notes.Add($"the screen did **not change** after the previous step (#{previous.Seq} {previous.Name} {previous.Target}): its action may not have taken effect");
+                if (previous?.Diagnostics != null && previous.Diagnostics.TryGetValue("appResponding", out var presp) && presp == "no")
+                    notes.Add($"the app was not responding after the previous step (#{previous.Seq})");
+                if (notes.Count > 0) sb.Append("Observed: ").Append(string.Join("; ", notes)).AppendLine(".").AppendLine();
+
                 if (snapshot != null)
                 {
                     var tree = TraceAnalysis.CompactTree(snapshot, 250);
@@ -90,10 +112,16 @@ namespace WinTrace
             }
 
             sb.AppendLine("## Steps").AppendLine();
+            var misses = events.Count(e => TraceAnalysis.IsRecoveredMiss(e, meta, events));
+            if (misses > 0) sb.Append(misses).AppendLine(misses == 1
+                ? " step marked *missed (recovered)* is a probe (`Capture.None`) that threw and was handled; it is not where the test failed."
+                : " steps marked *missed (recovered)* are probes (`Capture.None`) that threw and were handled; they are not where the test failed.").AppendLine();
             sb.AppendLine("| # | | Time | Duration | Group | Step | Target / message |").AppendLine("|---|---|---|---|---|---|---|");
             foreach (var e in events.Take(300))
             {
-                var status = e.Kind == "log" ? "log" : e.Kind != "error" ? "ok" : failed ? "**FAIL**" : "recovered";
+                var status = e.Kind == "log" ? "log" : e.Kind != "error" ? "ok"
+                    : TraceAnalysis.IsRecoveredMiss(e, meta, events) ? "missed (recovered)" : failed ? "**FAIL**" : "recovered";
+                if (e.Diagnostics != null && e.Diagnostics.TryGetValue("appResponding", out var hung) && hung == "no") status += ", app not responding";
                 var target = e.Error != null ? (e.Target != null ? e.Target + " — " : "") + (e.CauseSeq is int cs ? $"(failed in #{cs}) " : "") + e.Error : e.Target;
                 sb.Append("| ").Append(e.Seq).Append(" | ").Append(status).Append(" | ").Append(Off(e)).Append(" | ")
                   .Append(e.Kind == "log" ? "" : Secs(e.DurationMs)).Append(" | ").Append(Cell(e.Group)).Append(" | ")

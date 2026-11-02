@@ -24,7 +24,11 @@ wintrace show trace.zip --out report.html --no-open
 - **Step list (left):** grouped as in your test. Click a group header to collapse it. The thin bar under each
   step shows its duration relative to the slowest step, so slow steps stand out.
 - **Filters:** free text (matches name, locator, error, group and parameters), **Errors** only, or
-  **No logs**.
+  **No logs**. **Hide noise** (shown when there is some) hides minor steps: `Capture.None` probes, including ones
+  that missed and were recovered (*missed probe*), and Playwright internal queries (`isVisible`, `queryCount`...).
+  It never hides the step where the test failed, and the choice is remembered.
+- **Badges:** *not responding* when the app window was hung at the end of a step; *no visible change* on the
+  action right before a failure whose screenshot did not change (the action probably did not take effect).
 
 The report opens on the step where the test failed. A step that failed because a nested step failed shows
 `↳ failed in #N` and links to that step, where the screenshot and UI tree were captured once. Each step has its own link (`report.html#7`), so you can point a
@@ -35,10 +39,10 @@ colleague to the exact step.
 | Tab | Shows |
 |---|---|
 | **Screenshots** | Before and after the step (one screenshot for log entries taken with `screenshot: true`). Click to enlarge; use ← → in the enlarged view. When the trace has a video, it plays here, positioned at the selected step; with several segments it switches to the one covering the step. |
-| **Details** | Step name, locator, group, timing (duration, and capture time with the UI tree part), parameters (with passwords hidden), error and full stack trace. |
+| **Details** | Step name, locator, group, timing (duration, and capture time with the UI tree part), what was observed (app CPU, not responding, screen unchanged), parameters (with passwords hidden), error and full stack trace. |
 | **UI tree** | The UI Automation tree captured for the step (by default only for failed steps). See below. |
 | **Logs** | All `rec.Log` messages with their time. Click one to jump to it. |
-| **Trace info** | Machine, OS, driver, start and stop time, number of steps, video file. |
+| **Trace info** | Machine, OS, driver, start and stop time, number of steps, test context (`SetContext`), video file. |
 
 ## UI tree and locator picker
 

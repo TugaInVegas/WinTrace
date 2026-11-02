@@ -33,6 +33,71 @@ namespace WinTrace.Cli
             /// <summary>Appium <c>automationName</c> (e.g. NovaWindows). When set, W3C capabilities are sent.</summary>
             public string? AutomationName { get; set; }
             public bool WantScreenshot { get; set; }
+            /// <summary>Locators to measure in the window: match count and lookup time, native and as XPath.</summary>
+            public List<Locator> Verify { get; } = new List<Locator>();
+            /// <summary>Skip reading the UI tree (e.g. only verifying locators; the tree can take long on big apps).</summary>
+            public bool SkipSource { get; set; }
+        }
+
+        /// <summary>A WebDriver locator strategy ("accessibility id", "name", "class name", "id", "xpath") and value.</summary>
+        public sealed class Locator
+        {
+            public Locator(string strategy, string value) { Strategy = strategy; Value = value; }
+            public string Strategy { get; }
+            public string Value { get; }
+            public override string ToString() => $"{Strategy}={Value}";
+
+            static readonly Dictionary<string, string> Strategies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["accessibilityid"] = "accessibility id", ["accessibility id"] = "accessibility id", ["automationid"] = "accessibility id",
+                ["name"] = "name", ["classname"] = "class name", ["class name"] = "class name", ["class"] = "class name",
+                ["id"] = "id", ["xpath"] = "xpath", ["tagname"] = "tag name", ["tag name"] = "tag name"
+            };
+
+            /// <summary>Parses <c>accessibilityid=btnSave</c>, <c>name=Save</c>, <c>xpath=//Button</c> or a recorded target like <c>By.Name: Save</c>.</summary>
+            public static Locator? Parse(string text)
+            {
+                text = text.Trim();
+                var by = System.Text.RegularExpressions.Regex.Match(text, @"^(?:Mobile|Windows)?By\.(\w+)(?:\([^)]*\))?:\s*(.*)$");
+                if (by.Success)
+                {
+                    var kind = by.Groups[1].Value;
+                    return Strategies.TryGetValue(kind, out var s) ? new Locator(s, by.Groups[2].Value)
+                        : kind.Equals("XPath", StringComparison.OrdinalIgnoreCase) ? new Locator("xpath", by.Groups[2].Value) : null;
+                }
+                var eq = text.IndexOf('=');
+                if (eq <= 0) return null;
+                return Strategies.TryGetValue(text.Substring(0, eq).Trim(), out var strategy) ? new Locator(strategy, text.Substring(eq + 1)) : null;
+            }
+
+            /// <summary>The same lookup written as XPath, or null when there is no equivalent (or it already is XPath).</summary>
+            public string? AsXPath() => Strategy switch
+            {
+                "accessibility id" => $"//*[@AutomationId={XPathLiteral(Value)}]",
+                "name" => $"//*[@Name={XPathLiteral(Value)}]",
+                "class name" => $"//*[@ClassName={XPathLiteral(Value)}]",
+                "tag name" => "//" + Value,
+                _ => null
+            };
+        }
+
+        public sealed class Measurement
+        {
+            public string Strategy { get; set; } = "";
+            public string Value { get; set; } = "";
+            /// <summary>Elements found, or -1 when the lookup failed (see <see cref="Error"/>).</summary>
+            public int Count { get; set; }
+            /// <summary>Best of two lookups, in milliseconds.</summary>
+            public double Ms { get; set; }
+            public string? Error { get; set; }
+        }
+
+        public sealed class Verification
+        {
+            public Locator Locator { get; set; } = null!;
+            public Measurement Native { get; set; } = null!;
+            public Measurement? XPath { get; set; }
+            public string Verdict { get; set; } = "";
         }
 
         public sealed class Result
@@ -40,6 +105,7 @@ namespace WinTrace.Cli
             public string SessionId { get; set; } = "";
             public string Source { get; set; } = "";
             public byte[]? Screenshot { get; set; }
+            public List<Verification> Verifications { get; } = new List<Verification>();
         }
 
         public static async Task<Result> TakeAsync(Request request, HttpClient? http = null)
@@ -66,15 +132,21 @@ namespace WinTrace.Cli
                     }
                 }
 
-                var source = (await Send(client, HttpMethod.Get, $"{baseUrl}/session/{session}/source", null))?["value"]?.GetValue<string>()
+                var source = request.SkipSource ? ""
+                    : (await Send(client, HttpMethod.Get, $"{baseUrl}/session/{session}/source", null))?["value"]?.GetValue<string>()
                     ?? throw new LiveSnapshotException("The driver returned no page source.");
+                var verifications = new List<Verification>();
+                foreach (var locator in request.Verify)
+                    verifications.Add(await VerifyAsync(client, $"{baseUrl}/session/{session}", locator));
                 byte[]? screenshot = null;
                 if (request.WantScreenshot)
                 {
                     var b64 = (await Send(client, HttpMethod.Get, $"{baseUrl}/session/{session}/screenshot", null))?["value"]?.GetValue<string>();
                     if (!string.IsNullOrEmpty(b64)) screenshot = Convert.FromBase64String(b64);
                 }
-                return new Result { SessionId = session, Source = source, Screenshot = screenshot };
+                var result = new Result { SessionId = session, Source = source, Screenshot = screenshot };
+                result.Verifications.AddRange(verifications);
+                return result;
             }
             finally
             {
@@ -101,6 +173,53 @@ namespace WinTrace.Cli
                 .Take(max)
                 .ToList();
         }
+
+        static async Task<Verification> VerifyAsync(HttpClient client, string sessionUrl, Locator locator)
+        {
+            async Task<Measurement> Measure(string strategy, string value)
+            {
+                var m = new Measurement { Strategy = strategy, Value = value, Ms = double.MaxValue };
+                for (var i = 0; i < 2; i++)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    try
+                    {
+                        var res = await Send(client, HttpMethod.Post, sessionUrl + "/elements", new JsonObject { ["using"] = strategy, ["value"] = value });
+                        sw.Stop();
+                        m.Count = res?["value"] is JsonArray a ? a.Count : 0;
+                    }
+                    catch (LiveSnapshotException ex)
+                    {
+                        sw.Stop();
+                        // Some drivers answer "no such element" to find-elements with no match.
+                        if (ex.Message.Contains("no such element") || ex.Message.Contains("could not be located")) m.Count = 0;
+                        else { m.Count = -1; m.Error = ex.Message; }
+                    }
+                    m.Ms = Math.Min(m.Ms, Math.Round(sw.Elapsed.TotalMilliseconds, 1));
+                    if (m.Error != null) break;
+                }
+                return m;
+            }
+
+            var v = new Verification { Locator = locator, Native = await Measure(locator.Strategy, locator.Value) };
+            var xpath = locator.AsXPath();
+            if (xpath != null) v.XPath = await Measure("xpath", xpath);
+            v.Verdict = v.Native.Count switch
+            {
+                -1 => "the driver rejected this locator: " + v.Native.Error,
+                0 => "no match in this window: check the value with --find, or the window (a popup or dialog may be a separate window)",
+                1 => locator.Strategy == "xpath" ? "unique, but XPath: prefer accessibility id or name when the element has one"
+                    : v.XPath != null && v.XPath.Count == 1 && v.XPath.Ms > 0 && v.Native.Ms > 0
+                        ? $"unique; native lookup is {Ratio(v.XPath.Ms, v.Native.Ms)} than the XPath equivalent"
+                        : "unique",
+                _ => $"{v.Native.Count} matches: FindElement returns the first one; use a more specific locator or search inside a parent element"
+            };
+            return v;
+        }
+
+        static string Ratio(double xpathMs, double nativeMs) =>
+            xpathMs >= nativeMs ? (xpathMs / nativeMs).ToString("0.#", CultureInfo.InvariantCulture) + "x faster"
+                : (nativeMs / xpathMs).ToString("0.#", CultureInfo.InvariantCulture) + "x slower";
 
         static async Task<string> CreateSession(HttpClient client, string baseUrl, Request request, string? app, string? topLevelWindow)
         {

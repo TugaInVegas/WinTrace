@@ -78,3 +78,31 @@ public class TraceReportHintTests
         Assert.Contains($"The screenshot at the failure (`{png}`) shows what was on screen.", md);
     }
 }
+
+public class TraceReportObservationTests
+{
+    [Fact]
+    public void Failure_section_lists_other_windows_and_observations()
+    {
+        var rec = new TraceRecorder();
+        rec.Step("click", "By.Name: Customers menu", () => { });
+        var events = rec.Events.ToList();
+        events[0].Diagnostics = new System.Collections.Generic.Dictionary<string, string> { ["screen"] = "unchanged" };
+        var failed = new TraceEvent
+        {
+            Seq = 2, Kind = "error", Name = "find", Target = "By.Name: Customer list", Error = "not found", ErrorDetail = "x",
+            Start = DateTimeOffset.UtcNow, Snapshot = "snapshots/s.xml",
+            Diagnostics = new System.Collections.Generic.Dictionary<string, string> { ["appResponding"] = "no", ["appCpu"] = "97%" }
+        };
+        events.Add(failed);
+        var meta = rec.GetMetadata();
+        meta.Outcome = "failed";
+        var tree = "<Window Name=\"Sample App\"><Button Name=\"Save\"/><ProcessWindow Name=\"\" ClassName=\"Popup\" x=\"10\" y=\"20\" width=\"200\" height=\"100\"/></Window>";
+        var md = TraceReport.Markdown(meta, events, id => id == "snapshots/s.xml" ? System.Text.Encoding.UTF8.GetBytes(tree) : null);
+        Assert.Contains("Other windows of the app that were open", md);
+        Assert.Contains("class `Popup` at 10,20, 200x100", md);
+        Assert.Contains("**not responding**", md);
+        Assert.Contains("app CPU during the step: 97%", md);
+        Assert.Contains("the screen did **not change** after the previous step (#1 click", md);
+    }
+}

@@ -14,6 +14,8 @@ Work from the evidence in the trace before changing code. Do not re-run long UI 
   (`bin/<Configuration>/<TargetFramework>/`); the project may configure another folder (look for `TraceSession`).
 - List them, newest first: `wintrace list <folder> --failed` (add `--json` for structured output).
 - If `wintrace` is missing: `dotnet tool install -g WinTrace.Cli`.
+- No trace because the run crashed, timed out or was stopped? `wintrace recover <folder>` writes `*_aborted.zip`
+  from the live copy in `<folder>/.live/`; the step that was running is marked *Unfinished*.
 
 After a full run with several failures, start with the run report: `wintrace report <folder> --history <archive>`.
 It groups failures by cause and marks each one new, recurring or intermittent; work on one cause at a time.
@@ -36,12 +38,18 @@ It groups failures by cause and marks each one new, recurring or intermittent; w
 | "Test failed outside the recorded steps" | Assertion or code outside any step | Read the failure message; the screenshot shows the state before it. |
 | `failed in nested step #N` | The failure happened inside a nested step | Read step #N: its error, stack trace and capture. |
 | No screenshots or UI tree | Driver session was gone | Check the previous step and whether the app crashed. |
+| `Observed: app not responding` / high app CPU | App was busy | Wait for the app to be ready; keep the locator. |
+| Previous step left the screen unchanged | That action did not take effect | Wait before it, or wait for its effect. |
+| "Other windows of the app" lists a popup | The element is in that popup window | Look for it there. |
+| `missed (recovered)` steps | Probes that threw and were handled | Not the failure; ignore. |
+| Run report: first difference from the last passing run | Where this run went another way | Start there, not at the final error. |
 | Environment warning: lock screen / non-interactive / Remote Desktop | The machine, not the test | Report it; do not change test code for it. |
 | `intermittent` in the run report | Flaky test or environment | Compare with the earlier failures' traces before changing waits. |
 | Recovered errors in a passed test | Expected misses (probes, optional dialogs) | Usually nothing to fix. |
 | `[web]` step failed, or `console.error` / `HTTP 5xx` lines just before the failure | The web part (Playwright) failed or left bad state | Read the web step's call log and the browser lines; for DOM details open the Playwright trace from `playwright/` in the zip with `playwright.ps1 show-trace`. |
 
-Check a locator against the live app when it is running: `wintrace snapshot --window "<window title>" --find "<text>"`.
+Check a locator against the live app when it is running: `wintrace snapshot --window "<window title>" --find "<text>"`,
+and measure a fix with `--verify accessibilityid=<id>` (match count, native vs XPath time).
 
 ## 4. Fix and report
 

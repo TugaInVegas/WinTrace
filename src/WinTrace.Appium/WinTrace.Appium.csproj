@@ -10,4 +10,5 @@
     <PackageReference Include="System.Drawing.Common" Version="8.0.33" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="..\WinTrace.Core\WinTrace.Core.csproj" /></ItemGroup>
+  <ItemGroup><InternalsVisibleTo Include="WinTrace.Appium.Tests" /></ItemGroup>
 </Project>
