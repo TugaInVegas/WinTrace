@@ -155,7 +155,7 @@ namespace WinTrace
         {
             var ev = new TraceEvent { Name = name, Target = target, Start = DateTimeOffset.UtcNow };
             lock (_gate) { ev.Seq = ++_seq; ev.Group = CurrentGroup(); }
-            if (_options.CaptureCallSite) ev.Location = CallSite.Describe(_options.CallSiteDepth);
+            if (_options.CaptureCallSite) ev.Location = CallSite.Describe(_options.CallSiteDepth, _options.CallSiteSkip);
             if (parameters != null)
             {
                 var sensitiveTarget = IsSensitive(target);
@@ -171,7 +171,7 @@ namespace WinTrace
                 captureTime.Stop();
             }
 
-            Exception? firstFailure = null;
+            Exception? firstFailure = null, takeOver = null;
             var alreadyCaptured = false;
             var sw = Stopwatch.StartNew();
             try
@@ -183,12 +183,18 @@ namespace WinTrace
                 ev.Kind = "error";
                 ev.Error = ex.GetType().Name + ": " + ex.Message;
                 var cause = FindCaptured(ex);
-                if (cause != null)
+                if (cause != null && cause.HasCapture)
                 {
                     // The same failure, propagating from a nested step: reuse its capture instead of taking another.
                     alreadyCaptured = true;
                     ev.CauseSeq = cause.Seq;
                     ev.ScreenshotAfter = cause.ScreenshotAfter;
+                }
+                else if (cause != null)
+                {
+                    // The nested step that failed captured nothing (e.g. Capture.None probe): this step captures for it.
+                    ev.CauseSeq = cause.Seq;
+                    takeOver = ex;
                 }
                 else
                 {
@@ -217,8 +223,16 @@ namespace WinTrace
                     captureTime.Stop();
                 }
                 if (captureTime.ElapsedTicks > 0) ev.CaptureMs = captureTime.Elapsed.TotalMilliseconds;
-                if (firstFailure != null)
-                    lock (_gate) _captured.Add(firstFailure, new CapturedFailure(ev.Seq, ev.ScreenshotAfter));
+                var registered = firstFailure ?? takeOver;
+                if (registered != null)
+                {
+                    var hasCapture = ev.ScreenshotAfter != null || ev.Snapshot != null;
+                    lock (_gate)
+                    {
+                        _captured.Remove(registered);
+                        _captured.Add(registered, new CapturedFailure(ev.Seq, ev.ScreenshotAfter, hasCapture));
+                    }
+                }
                 lock (_gate) _events.Add(ev);
             }
         }
@@ -334,9 +348,10 @@ namespace WinTrace
 
         sealed class CapturedFailure
         {
-            public CapturedFailure(int seq, string? screenshotAfter) { Seq = seq; ScreenshotAfter = screenshotAfter; }
+            public CapturedFailure(int seq, string? screenshotAfter, bool hasCapture) { Seq = seq; ScreenshotAfter = screenshotAfter; HasCapture = hasCapture; }
             public int Seq { get; }
             public string? ScreenshotAfter { get; }
+            public bool HasCapture { get; }
         }
 
         sealed class Scope : IDisposable

@@ -244,7 +244,7 @@ namespace WinTrace
             if (Trx != null)
                 sb.Append("- TRX: ").Append(Trx.Total).Append(" tests, ").Append(Trx.Passed).Append(" passed, **").Append(Trx.Failed).Append(" failed**, ")
                   .Append(Trx.NotRun).AppendLine(" not run");
-            sb.Append("- History: ").AppendLine(History.Count == 0 ? "no earlier runs given (use --history)" : $"compared with {History.Count} earlier run(s)");
+            sb.Append("- History: ").AppendLine(History.Count == 0 ? "no earlier runs given or found (use --history)" : $"compared with {History.Count} earlier run(s)");
             if (failed.Count > 0 && History.Count > 0)
                 sb.Append("- New: **").Append(failed.Count(e => e.History == "new")).Append("**, recurring: ").Append(failed.Count(e => e.History == "recurring"))
                   .Append(", intermittent (possibly flaky): ").Append(failed.Count(e => e.History == "intermittent")).AppendLine();

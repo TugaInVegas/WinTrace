@@ -82,7 +82,7 @@ namespace WinTrace
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string? deviceName, int modeNum, ref DEVMODE mode);
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
         [DllImport("user32.dll", SetLastError = true)] static extern bool CloseDesktop(IntPtr desktop);
-        [DllImport("user32.dll", SetLastError = true)] static extern bool GetUserObjectInformation(IntPtr obj, int index, byte[] info, int length, out int needed);
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "GetUserObjectInformationW")] static extern bool GetUserObjectInformation(IntPtr obj, int index, byte[] info, int length, out int needed);
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode)] static extern int RegGetValue(IntPtr hkey, string subKey, string value, uint flags, out uint type, out uint data, ref uint size);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

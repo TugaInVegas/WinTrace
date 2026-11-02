@@ -190,7 +190,7 @@ $('#chips').innerHTML=[
   failed&&rootErrors.length?`<span class="chip bad">${rootErrors.length} step error${rootErrors.length===1?'':'s'}</span>`:'',
   !failed&&rootErrors.length?`<span class="chip warn" title="Steps that threw, but the test recovered and passed">${rootErrors.length} recovered error${rootErrors.length===1?'':'s'}</span>`:'',
   `<span class="chip">${steps} steps</span>`,`<span class="chip">${fmtMs(total)}</span>`,
-  D.meta.framework?`<span class="chip">${esc(D.meta.framework)}</span>`:'',
+  (D.framework??D.meta.framework)?`<span class="chip">${esc(D.framework??D.meta.framework)}</span>`:'',
   segs.length?`<span class="chip">video${segs.length>1?' · '+segs.length+' segments':''}</span>`:''].join('');
 if(failed){const b=$('#banner'),e=finalErr;b.hidden=false;
   b.innerHTML=e?`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`
@@ -310,9 +310,19 @@ function renderTab(){const e=items[cur].e,body=$('#tabbody');
   if(tab==='logs')return logsTab(e,body);
   return infoTab(body)}
 
+// Where a failure's screenshot and UI tree live: the step, the nested step it failed in, or (when that one captured
+// nothing, e.g. a Capture.None probe) the innermost enclosing step that captured the same failure.
+const hasCap=x=>!!(x&&(x.screenshotAfter||x.snapshot));
+function capOf(e){const bySeq=s=>EV.find(x=>x.seq===s);let start=e.causeSeq?bySeq(e.causeSeq)||e:e;if(hasCap(start))return start;
+  let cur=start;for(let g=0;g<50;g++){const outer=EV.filter(x=>x.causeSeq===cur.seq).sort((a,b)=>b.seq-a.seq)[0];if(!outer)break;if(hasCap(outer))return outer;cur=outer}return start}
+
 // screenshots + lightbox
 let lb=[],lbi=0;
-function shotsTab(e,body){const shots=(e.kind==='log'?[['Screenshot',e.screenshotAfter]]:[['Before',e.screenshotBefore],['After',e.screenshotAfter]]).filter(([,k])=>k&&R[k]);
+function shotsTab(e,body){
+  if(e.kind==='error'&&!hasCap(e)&&!e.screenshotBefore){const c=capOf(e);if(c!==e&&hasCap(c)){const k=c.screenshotAfter;
+    body.innerHTML=`<p class="note">This step captured nothing (e.g. <code>Capture.None</code>); the enclosing step <a href="#${c.seq}">#${c.seq} ${esc(c.name)}</a> captured the failure.</p>${k&&R[k]?`<div class="shots"><figure><figcaption>At the failure (from #${c.seq})</figcaption><img src="${R[k]}" alt="Screenshot at the failure"></figure></div>`:''}`;
+    body.querySelectorAll('img').forEach(img=>img.onclick=()=>openLb([{cap:`At the failure · #${c.seq} ${c.name}`,src:R[k]}],0));return}}
+  const shots=(e.kind==='log'?[['Screenshot',e.screenshotAfter]]:[['Before',e.screenshotBefore],['After',e.screenshotAfter]]).filter(([,k])=>k&&R[k]);
   if(!shots.length&&!vidEl){body.innerHTML=`<p class="note">${e.kind==='log'?'This log entry has no screenshot. Use rec.Log(message, screenshot: true) to add one.':'No screenshots for this step. It was recorded with Capture.None, or the trace source could not take screenshots (see the Logs tab).'}</p>`;return}
   body.innerHTML=`<div class="shots">${shots.map(([l,k],j)=>`<figure><figcaption>${l}</figcaption><img src="${R[k]}" data-j="${j}" alt="${l} screenshot"></figure>`).join('')}${vidEl?`<figure id="vidfig"><figcaption>Screen recording (synced to this step) <span class="vidnote" id="vidnote">${esc(vidMsg)}</span></figcaption></figure>`:''}</div>`;
   if(vidEl)$('#vidfig').appendChild(vidEl);
@@ -337,7 +347,7 @@ function logsTab(e,body){const logs=items.filter(it=>it.e.kind==='log');
   body.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>select(+tr.dataset.i))}
 
 function infoTab(body){const m=D.meta;
-  body.innerHTML=`<table class="kv"><tr><td>Title</td><td>${esc(m.title)}</td></tr><tr><td>Framework</td><td>${esc(m.framework||'—')}</td></tr>
+  body.innerHTML=`<table class="kv"><tr><td>Title</td><td>${esc(m.title)}</td></tr><tr><td>Framework</td><td>${esc(D.framework||m.framework||'—')}</td></tr>
     <tr><td>Started</td><td>${esc(new Date(m.started).toLocaleString())}</td></tr><tr><td>Stopped</td><td>${m.stopped?esc(new Date(m.stopped).toLocaleString()):'—'}</td></tr>
     <tr><td>Duration</td><td>${fmtMs(total)}</td></tr><tr><td>Outcome</td><td>${failed?'<span class="err">failed</span>':'passed'}${D.meta.outcome?'':' (from step errors; outcome not reported)'}</td></tr>
     ${D.meta.failureMessage?`<tr><td>Failure message</td><td class="mono">${esc(D.meta.failureMessage)}</td></tr>`:''}
@@ -360,7 +370,9 @@ function locators(n){const a=k=>n.getAttribute(k)||'',q=s=>s.replace(/\\/g,'\\\\
   const attr=a('AutomationId')?['AutomationId',a('AutomationId')]:a('Name')?['Name',a('Name')]:null;
   if(attr)out.push([`By.XPath("//${n.tagName}[@${attr[0]}=${q(x(attr[1]))}]")`,'slow on WinAppDriver']);
   return out}
-function treeTab(e,body){const text=e.snapshot&&R[e.snapshot];
+function treeTab(e,body){
+  if(!e.snapshot&&e.kind==='error'){const c=capOf(e);if(c!==e&&c.snapshot&&R[c.snapshot]&&!isWeb(e)){e={...e,snapshot:c.snapshot,screenshotAfter:c.screenshotAfter||e.screenshotAfter}}}
+  const text=e.snapshot&&R[e.snapshot];
   if(!text&&isWeb(e)){body.innerHTML=`<p class="note">This is a browser step. Its DOM snapshot (before, during and after the action), network requests and console are in the Playwright trace.</p>${pwTraces.length?'<p><button class="pwOpen">Open in Playwright Trace Viewer</button></p>':''}`;
     body.querySelectorAll('.pwOpen').forEach(b=>b.onclick=openPw);return}
   if(!text&&e.causeSeq){body.innerHTML=`<p class="note">This step failed because step <a href="#${e.causeSeq}">#${e.causeSeq}</a> failed. The UI tree was captured there, once.</p>`;return}

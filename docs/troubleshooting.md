@@ -64,6 +64,13 @@ The viewer places steps on the video using its start time. With `TraceSession.St
 ffmpeg starts capturing. With `AttachVideo`, pass the exact instant your recorder started; a few hundred
 milliseconds of error shifts every step by the same amount.
 
+## CA1416 warnings after upgrading (System.Drawing)
+
+`WinTrace.Appium` references `System.Drawing.Common` 8 (screenshot compression). If your own code uses
+`System.Drawing` and the project targets `net8.0` rather than `net8.0-windows`, the analyzer now flags it as
+Windows-only. Target `net8.0-windows`, or declare the assembly Windows-only:
+`[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows")]`.
+
 ## "TraceOptions is an ambiguous reference"
 
 `System.Diagnostics` also has a `TraceOptions` type. In files with `using System.Diagnostics;`, write

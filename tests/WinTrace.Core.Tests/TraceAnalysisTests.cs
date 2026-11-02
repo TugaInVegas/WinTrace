@@ -125,3 +125,38 @@ public class EnvironmentTests
         Assert.Empty(off.GetMetadata().Environment);
     }
 }
+
+public class EnvironmentRobustnessTests
+{
+    [Fact]
+    public void Garbled_desktop_name_does_not_raise_a_lock_screen_warning()
+    {
+        var m = new TraceMetadata();
+        m.Environment["desktop"] = "敄慦汵";
+        m.Environment["desktopAtEnd"] = "Winlogon";
+        var w = TraceAnalysis.EnvironmentWarnings(m);
+        Assert.Single(w);
+        Assert.Contains("at the end", w[0]);
+    }
+
+    [Fact]
+    public void Desktop_name_is_readable_on_windows()
+    {
+        if (!System.OperatingSystem.IsWindows()) return;
+        var env = new TraceRecorder().GetMetadata().Environment;
+        if (env.TryGetValue("desktop", out var d))
+            Assert.True(d.All(ch => ch >= 0x20 && ch < 0x7F), $"desktop name not plain text: {d}");
+    }
+
+    [Fact]
+    public void Framework_label_follows_the_events()
+    {
+        var meta = new TraceMetadata { Framework = "WinAppDriver" };
+        var desk = new TraceEvent { Kind = "action" };
+        var web = new TraceEvent { Kind = "action", Origin = "web" };
+        Assert.Equal("WinAppDriver", TraceAnalysis.FrameworkLabel(meta, new[] { desk }));
+        Assert.Equal("Playwright", TraceAnalysis.FrameworkLabel(meta, new[] { web }));
+        Assert.Equal("WinAppDriver + Playwright", TraceAnalysis.FrameworkLabel(meta, new[] { desk, web }));
+        Assert.Equal("Playwright + WinAppDriver", TraceAnalysis.FrameworkLabel(new TraceMetadata { Framework = "Playwright + WinAppDriver" }, new[] { desk, web }));
+    }
+}

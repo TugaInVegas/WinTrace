@@ -108,7 +108,7 @@ namespace WinTrace
             var events = Recorder.Events;
             var meta = Recorder.GetMetadata();
             var step = TraceAnalysis.FailureStep(meta, events, out _);
-            var captured = step?.CauseSeq is int c ? events.FirstOrDefault(e => e.Seq == c) ?? step : step;
+            var captured = step == null ? null : TraceAnalysis.CaptureFor(step, events);
             var imageId = captured?.ScreenshotAfter ?? captured?.ScreenshotBefore;
             var image = imageId == null ? null : Recorder.GetResource(imageId);
             string? imageFile = null;

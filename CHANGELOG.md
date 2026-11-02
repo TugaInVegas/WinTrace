@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.0
+
+Fixes from the first live run of 0.6.0 in an MSTest + WinAppDriver + Playwright .NET suite.
+
+### Fixed
+- A failure in a `Capture.None` step nested in a normal step was left without any capture (no screenshot, UI tree,
+  similar elements or failure image). The innermost enclosing step that may capture now takes it;
+  `TraceAnalysis.CaptureFor` finds it, and the viewer, `.md`, `inspect` and the failure image use it.
+- False "lock screen" warnings on every trace: the input desktop name was read through the ANSI entry point and
+  decoded as UTF-16. It now uses the Unicode one, and an unreadable name never raises a warning.
+- `wintrace report --history` with a folder that does not exist yet (first run, clean agent) now reports without
+  history instead of failing.
+- Call sites no longer spend frames on lambda bodies or on several frames of the same helper type.
+- Web-only traces were labelled with the configured desktop framework; the label now follows the events
+  (`TraceAnalysis.FrameworkLabel`: "Playwright", "WinAppDriver + Playwright").
+
+### Added
+- `TraceOptions.CallSiteSkip`: type or namespace prefixes to leave out of call sites.
+
+### Upgrade notes
+- `WinTrace.Appium` references `System.Drawing.Common` 8: projects that use `System.Drawing` and target `net8.0`
+  (not `net8.0-windows`) get CA1416 warnings; target `net8.0-windows` or add `[assembly: SupportedOSPlatform("windows")]`.
+- `TraceRecorder.Current` is a plain static (one traced test at a time); with parallel tests pass `session.Recorder`.
+
 ## 0.6.0
 
 ### Added

@@ -180,9 +180,10 @@ int Report()
     var history = new List<HistoricRun>();
     if (historyDir != null)
     {
-        if (!Directory.Exists(historyDir)) { Console.Error.WriteLine($"History folder not found: {historyDir}"); return 2; }
+        // A first run or a clean agent has no archive yet: report without history instead of failing.
+        if (!Directory.Exists(historyDir)) Console.Error.WriteLine($"No earlier runs: history folder not found ({historyDir}).");
         // One subfolder per earlier run, newest first.
-        foreach (var run in new DirectoryInfo(historyDir).GetDirectories().OrderByDescending(d => d.LastWriteTimeUtc))
+        else foreach (var run in new DirectoryInfo(historyDir).GetDirectories().OrderByDescending(d => d.LastWriteTimeUtc))
         {
             var hasTrx = Directory.EnumerateFiles(run.FullName, "*.trx", SearchOption.AllDirectories).Any();
             history.Add(RunReport.ReadHistoricRun(run.Name, TraceFiles.Find(run.FullName).Select(f => f.FullName), hasTrx ? TrxRun.Read(run.FullName) : null));
@@ -429,7 +430,8 @@ int Inspect(LoadedTrace t)
 
     var failedOutsideSteps = TestFailed(t) && RootErrors(t).Count == 0;
     // A step that failed because a nested step failed shares that step's capture.
-    var captured = e.CauseSeq is int causeSeq ? t.Events.FirstOrDefault(x => x.Seq == causeSeq) ?? e : e;
+    var captured = TraceAnalysis.CaptureFor(e, t.Events);
+    var detailFrom = e.CauseSeq is int causeSeq ? t.Events.FirstOrDefault(x => x.Seq == causeSeq) ?? e : e;
     if (args.Contains("--markdown"))
     {
         Console.WriteLine(TraceReport.Markdown(t.Meta, t.Events, id => t.Resources.TryGetValue(id, out var b) ? b : null, zip));
@@ -438,7 +440,7 @@ int Inspect(LoadedTrace t)
 
     string? Text(string? id) => id != null && t.Resources.TryGetValue(id, out var b) ? System.Text.Encoding.UTF8.GetString(b) : null;
     var snapshot = Text(captured.Snapshot);
-    var locator = e.Kind == "error" ? TraceAnalysis.GuessLocator(captured, t.Events) : null;
+    var locator = e.Kind == "error" ? TraceAnalysis.GuessLocator(detailFrom, t.Events) : null;
     var similar = locator != null ? TraceAnalysis.FindSimilar(snapshot, locator) : Array.Empty<SimilarElement>();
     var elements = TraceAnalysis.ParseTree(snapshot);
 
@@ -469,7 +471,7 @@ int Inspect(LoadedTrace t)
             durationMs = Math.Round(e.DurationMs, 1),
             captureMs = e.CaptureMs is double c ? Math.Round(c, 1) : (double?)null,
             snapshotMs = captured.SnapshotMs is double sn ? Math.Round(sn, 1) : (double?)null,
-            e.Params, e.Error, errorDetail = captured.ErrorDetail, e.Location,
+            e.Params, e.Error, errorDetail = detailFrom.ErrorDetail, e.Location, capturedBySeq = captured.Seq,
             environment = t.Meta.Environment,
             environmentWarnings = TraceAnalysis.EnvironmentWarnings(t.Meta),
             locator,
@@ -501,7 +503,8 @@ int Inspect(LoadedTrace t)
     foreach (var p in e.Params) Console.WriteLine($"Param:    {p.Key} = {p.Value}");
     if (e.Error != null) Console.WriteLine($"Error:    {e.Error}");
     if (e.CauseSeq != null) Console.WriteLine($"Cause:    failed in nested step #{e.CauseSeq} (details and capture below are from that step)");
-    if (captured.ErrorDetail != null) Console.WriteLine("\nStack trace:\n" + captured.ErrorDetail);
+    if (captured != e && captured != detailFrom) Console.WriteLine($"Capture:  screenshot and UI tree taken by the enclosing step #{captured.Seq} ({captured.Name})");
+    if (detailFrom.ErrorDetail != null) Console.WriteLine("\nStack trace:\n" + detailFrom.ErrorDetail);
 
     if (similar.Count > 0)
     {

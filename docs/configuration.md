@@ -52,9 +52,12 @@ file names are removed from the test name.
 | `RedactParams` | `password`, `secret`, `token` | Case-insensitive words. A matching parameter name or step target hides the values. |
 | `CaptureCallSite` | `true` | Record which code issued each step (`AuxMethods.cs:120 ← CustomerPage.cs:55 ← CustomerTests.cs:42`). Needs PDB files next to the test assemblies. |
 | `CallSiteDepth` | `3` | How many of your own frames to keep. |
+| `CallSiteSkip` | empty | Type or namespace prefixes to leave out of call sites (helpers you cannot mark with attributes). |
 | `CaptureEnvironment` | `true` | Record screen, display scaling, Remote Desktop or console session, interactive session and whether the screen was locked, at the start and the end. |
 
-**Call sites.** WinTrace skips its own frames and framework code (`System`, `Microsoft`, `OpenQA`...). Mark your own
+**Call sites.** WinTrace skips its own frames, framework code (`System`, `Microsoft`, `OpenQA`...) and lambda bodies,
+and collapses consecutive frames of one type to the outermost (the method other code called), so a helper with an
+inner wrapper counts once. Mark your own
 tracing helpers with `[StackTraceHidden]` or `[DebuggerStepThrough]` so the call site starts at the code that
 called them:
 
@@ -90,8 +93,9 @@ taking another screenshot or UI tree.
 ## Recording from static helpers
 
 While a test runs, `TraceRecorder.Current` is its recorder (it is `null` outside a traced test). Use it from
-static helpers instead of passing the recorder around. It assumes one traced test at a time, which is the case
-for desktop UI tests sharing one desktop.
+static helpers instead of passing the recorder around. It is a plain static, so it assumes **one traced test at a
+time**, which is the case for desktop UI tests sharing one desktop. If tests run in parallel (for example web-only
+tests importing Playwright traces), do not use `Current`: pass `session.Recorder` explicitly in those tests.
 
 With `WinTrace.Appium`, drop-in extensions record on `TraceRecorder.Current` and just run the call outside a
 traced test:
@@ -154,7 +158,9 @@ screenshots are stored unchanged. Identical screenshots are stored once in the z
 Every screenshot and snapshot is a call to the driver. On large applications under WinAppDriver:
 
 - **UI tree snapshots** can take tens of seconds. Keep `Snapshots = SnapshotMode.OnError` (the default), use
-  `Capture.None` for probes that are expected to miss, and consider `SnapshotTimeout`.
+  `Capture.None` for probes that are expected to miss, and consider `SnapshotTimeout`. When a `Capture.None` step
+fails inside a normal step, the enclosing step takes the screenshot and UI tree for it, so the failure is never left
+without a capture.
 - **Screenshots** usually take 100-500 ms each. Each step takes two by default. Set
   `ScreenshotBefore = false` if that is too slow, or wrap several driver calls in one `rec.Step`.
 - **Labels:** elements found through `rec.Find` remember their locator. Elements found elsewhere cost two
