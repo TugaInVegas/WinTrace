@@ -204,7 +204,8 @@ $('#chips').innerHTML=[
   segs.length?`<span class="chip">video${segs.length>1?' · '+segs.length+' segments':''}</span>`:''].join('');
 if(failed){const b=$('#banner'),e=finalErr;b.hidden=false;
   b.innerHTML=e?`<b>✗ ${esc(e.name)}${e.target?' '+esc(e.target):''}</b><span>${esc(e.error)}</span>`
-    :`<b>✗ ${aborted?'Test did not finish':'Test failed outside the recorded steps'}</b><span>${esc(D.meta.failureMessage||'No failure message was reported.')}</span>`;
+    :aborted?`<b>✗ Test did not finish</b><span>${lastStep?`The run stopped after step #${lastStep.seq} ${esc(lastStep.name)}${lastStep.target?' '+esc(lastStep.target):''}; no step was running.`:'The run stopped before any step.'} Web steps and video are added when a test finishes, so this recovered trace has neither.</span>`
+    :`<b>✗ Test failed outside the recorded steps</b><span>${esc(D.meta.failureMessage||'No failure message was reported.')}</span>`;
   b.onclick=b.onkeydown=ev=>{if(ev.type==='click'||ev.key==='Enter')select(e?EV.indexOf(e):EV.length-1)}}
 
 // Environment problems that commonly cause UI automation failures (locked screen, non-interactive session...).

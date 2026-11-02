@@ -8,4 +8,7 @@
     <Description>wintrace: open and summarize WinTrace trace.zip files.</Description>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="..\WinTrace.Core\WinTrace.Core.csproj" /></ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="WinTrace.Cli.Tests" />
+  </ItemGroup>
 </Project>

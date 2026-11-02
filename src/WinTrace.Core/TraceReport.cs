@@ -43,6 +43,9 @@ namespace WinTrace
             if (failureImageFile != null) sb.Append("- Screenshot at the failure: `").Append(failureImageFile).AppendLine("`");
             sb.AppendLine();
             foreach (var w in TraceAnalysis.EnvironmentWarnings(meta)) sb.Append("> **Environment:** ").AppendLine(w).AppendLine();
+            if (aborted)
+                sb.AppendLine("> Recovered from the live trace of a test that did not finish. Web steps (merged Playwright traces) and the " +
+                    "video are added when a test finishes, so this trace has neither; screenshots, steps and context are complete up to where it stopped.").AppendLine();
 
             if (step != null && (failed || errors.Count > 0))
             {
@@ -50,7 +53,7 @@ namespace WinTrace
                 var detailFrom = step.CauseSeq is int c ? events.FirstOrDefault(e => e.Seq == c) ?? step : step;
                 sb.AppendLine(failed ? "## Failure" : "## First recovered error").AppendLine();
                 if (outside)
-                    sb.AppendLine("The test failed **outside the recorded steps** (for example in an assertion). The last recorded step was:").AppendLine();
+                    sb.Append(TraceAnalysis.OutsideStepsText(meta, events)).AppendLine(". The last recorded step was:").AppendLine();
                 sb.Append("Step #").Append(step.Seq).Append(" **").Append(step.Name).Append("**");
                 if (step.Target != null) sb.Append(" `").Append(step.Target).Append('`');
                 if (step.Group != null) sb.Append(" (group: ").Append(step.Group).Append(')');

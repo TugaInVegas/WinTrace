@@ -45,7 +45,9 @@ screenshots, a few KB). With those in the `--history` runs, the report adds:
 - a **Slower than the last passing run** table: steps at least twice and 1 s slower than in that run, for passed and
   failed tests (a dialog going from 1.7 s to 28 s shows up here). Repeated steps are matched by occurrence.
 
-Minor steps (`Capture.None` probes, Playwright internal queries) and logs are left out of the comparison. A passing
+Desktop steps are compared with desktop steps and web steps with web steps, since the two interleave differently from
+run to run; when the passing run has no web steps (Playwright traces are usually saved only for failures), web steps
+are left out. Minor steps (`Capture.None` probes, Playwright internal queries) and logs are left out too. A passing
 trace counts only when the test did not fail in that run.
 
 ## Azure DevOps

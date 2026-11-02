@@ -214,7 +214,8 @@ wintrace snapshot --window "<window title>" --verify accessibilityid=btnSave --v
 
 It prints how many elements match (use only unique ones) and the lookup time, native and as the equivalent XPath.
 
-`--window` matches the exact title first, then a title containing the text. Sessions created by `snapshot` are
+`--window` matches the exact title first, then a title containing the text (found through Win32 when the driver is
+local, so it is quick). Sessions created by `snapshot` are
 deleted when it finishes; `--session` only reads.
 
 Then write the test with the project's existing base class, page objects and helpers, record each user action as

@@ -96,7 +96,7 @@ public class LiveSnapshotTests
     public async Task Window_mode_attaches_by_handle_reads_tree_and_deletes_its_sessions()
     {
         using var d = new FakeDriver();
-        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample App", WantScreenshot = true });
+        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample App", WantScreenshot = true, FindWindow = _ => null });
 
         Assert.Equal(FakeDriver.Tree, r.Source);
         Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, r.Screenshot);
@@ -113,12 +113,12 @@ public class LiveSnapshotTests
     public async Task Window_title_falls_back_to_contains_and_reports_missing_windows()
     {
         using var d = new FakeDriver { WindowTitle = "Sample App - Customers" };
-        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample" });
+        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample", FindWindow = _ => null });
         Assert.NotEmpty(r.Source);
 
         using var d2 = new FakeDriver();
         var ex = await Assert.ThrowsAsync<LiveSnapshotException>(() =>
-            LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d2.Url, Window = "Nope" }));
+            LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d2.Url, Window = "Nope", FindWindow = _ => null }));
         Assert.Contains("No top-level window", ex.Message);
         Assert.Equal(1, d2.Requests.Count(q => q.Method == "DELETE"));   // the root session is cleaned up
     }
@@ -137,7 +137,7 @@ public class LiveSnapshotTests
     public async Task Appium_w3c_uses_prefixed_capabilities()
     {
         using var d = new FakeDriver(w3c: true);
-        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample App", AutomationName = "NovaWindows" });
+        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample App", AutomationName = "NovaWindows", FindWindow = _ => null });
         var creates = d.Requests.Where(q => q.Method == "POST" && q.Path == "/session").ToList();
         Assert.Contains("\"appium:automationName\":\"NovaWindows\"", creates[0].Body);
         Assert.Contains("\"appium:appTopLevelWindow\":\"0x1A2B\"", creates[1].Body);
@@ -192,5 +192,35 @@ public class LiveSnapshotTests
         Assert.Equal(strategy, l.Strategy);
         Assert.Equal(value, l.Value);
         Assert.Null(LiveSnapshot.Locator.Parse("btnSave"));
+    }
+
+    [Fact]
+    public async Task Window_found_locally_is_attached_by_handle_without_a_root_session()
+    {
+        using var d = new FakeDriver();
+        var r = await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample App", FindWindow = t => t == "Sample App" ? 0x1A2B : null });
+        var creates = d.Requests.Where(q => q.Method == "POST" && q.Path == "/session").ToList();
+        var create = Assert.Single(creates);
+        Assert.Contains("\"appTopLevelWindow\":\"0x1A2B\"", create.Body);
+        Assert.DoesNotContain("\"Root\"", create.Body);
+        Assert.Equal(FakeDriver.Tree, r.Source);
+        Assert.Equal(1, d.Requests.Count(q => q.Method == "DELETE"));
+    }
+
+    [Fact]
+    public async Task Window_not_found_locally_falls_back_to_the_desktop_root()
+    {
+        using var d = new FakeDriver();
+        await LiveSnapshot.TakeAsync(new LiveSnapshot.Request { Url = d.Url, Window = "Sample App", FindWindow = _ => null });
+        Assert.Contains(d.Requests, q => q.Method == "POST" && q.Path == "/session" && q.Body.Contains("\"Root\""));
+    }
+
+    [Fact]
+    public void Local_window_pick_prefers_exact_title_then_first_containing()
+    {
+        var windows = new[] { ((IntPtr)1, "Notes - sample app.txt"), ((IntPtr)2, "Sample App"), ((IntPtr)3, "Sample App - Customers") };
+        Assert.Equal(2, TopLevelWindows.Pick(windows, "Sample App"));
+        Assert.Equal(1, TopLevelWindows.Pick(windows, "sample"));
+        Assert.Null(TopLevelWindows.Pick(windows, "Other"));
     }
 }

@@ -134,6 +134,19 @@ namespace WinTrace
         static bool EndedTheTest(TraceEvent e, IReadOnlyList<TraceEvent> events) =>
             events.Any(x => x.CauseSeq == e.Seq) || events.Where(x => x.Kind != "log").LastOrDefault()?.Seq == e.Seq;
 
+        /// <summary>
+        /// Why the test failed when no step failed: for an aborted run, where it stopped ("The run stopped after step #3
+        /// click Save; no step was running"); otherwise "The test failed outside the recorded steps (for example in an
+        /// assertion)". Plain text, no trailing period.
+        /// </summary>
+        public static string OutsideStepsText(TraceMetadata meta, IReadOnlyList<TraceEvent> events)
+        {
+            if (meta.Outcome != "aborted") return "The test failed outside the recorded steps (for example in an assertion)";
+            var last = events.Where(e => e.Kind != "log").OrderBy(e => e.Seq).LastOrDefault();
+            return last == null ? "The run stopped before any step; no step was running"
+                : $"The run stopped after step #{last.Seq} {last.Name}{(last.Target != null ? " " + last.Target : "")}; no step was running";
+        }
+
         /// <summary>A minor step that threw and was recovered (a probe that missed).</summary>
         public static bool IsRecoveredMiss(TraceEvent e, TraceMetadata meta, IReadOnlyList<TraceEvent> events) =>
             e.Kind == "error" && IsNoise(e, meta, events);

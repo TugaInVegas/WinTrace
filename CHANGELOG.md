@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.1
+
+From the first runs of 0.8.0 (passing, failing and killed mid-run).
+
+### Fixed
+- Comparison with the last passing run aligned web steps against desktop steps ("first difference at #1 [web] goto,
+  where the last passing run did #1 <desktop step>"). Each origin is now compared with the same origin, and web steps
+  are left out when the passing run has none (Playwright traces are usually saved only for failures).
+- An aborted run that stopped between steps was described as "failed outside the recorded steps (for example in an
+  assertion)". The `.md`, viewer, `inspect`, `list` and run report now say "The run stopped after step #N ...; no
+  step was running" (the run report groups these as "Did not finish (aborted) between steps").
+- `wintrace snapshot --window` spent most of its time finding the window through the driver's desktop root (~30 s
+  on a busy desktop). With a driver on the same machine it now finds the window through Win32 and attaches by handle,
+  falling back to the old search when Win32 finds nothing.
+
+### Added
+- Aborted traces say in the `.md`, viewer and `inspect` that web steps and video are not available (they are added
+  when a test finishes); `wintrace tail` says it shows desktop steps only.
+
 ## 0.8.0
 
 From the 0.7.1 wishlist of an MSTest suite driving a desktop app through WinAppDriver and a web app through
