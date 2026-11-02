@@ -55,3 +55,26 @@ public class TraceReportTests
         Assert.Single(s.Finish(true));
     }
 }
+
+public class TraceReportHintTests
+{
+    sealed class Source : ITraceSource
+    {
+        public byte[]? CaptureScreenshot() => new byte[] { 0x89, 0x50, 0x4E, 0x47, 2 };
+        public string? CaptureSnapshot() => "<Window Name=\"Sample App\"><Button Name=\"Save\" AutomationId=\"btnSave\"/></Window>";
+    }
+
+    [Fact]
+    public void No_similar_element_points_to_the_failure_screenshot()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wintrace-hint", Guid.NewGuid().ToString("N"));
+        var s = new TraceSession("MenuDidNotOpen", new Source(), dir) { WriteHtml = false };
+        try { s.Recorder.Step("click", "By.Name: Customer settings", () => throw new InvalidOperationException("not found")); } catch { }
+        var files = s.Finish(true);
+        var md = File.ReadAllText(files.Single(f => f.EndsWith(".md")));
+        var png = Path.GetFileName(files.Single(f => f.EndsWith(".png")));
+        Assert.Contains("No UI element resembles `Customer settings`", md);
+        Assert.Contains("did not open", md);
+        Assert.Contains($"The screenshot at the failure (`{png}`) shows what was on screen.", md);
+    }
+}

@@ -57,7 +57,8 @@ file names are removed from the test name.
 
 **Call sites.** WinTrace skips its own frames, framework code (`System`, `Microsoft`, `OpenQA`...) and lambda bodies,
 and collapses consecutive frames of one type to the outermost (the method other code called), so a helper with an
-inner wrapper counts once. Mark your own
+inner wrapper counts once. It stops at the test method (or setup/cleanup method) and at async continuation
+boundaries, so frames of an earlier awaited method never appear. Mark your own
 tracing helpers with `[StackTraceHidden]` or `[DebuggerStepThrough]` so the call site starts at the code that
 called them:
 

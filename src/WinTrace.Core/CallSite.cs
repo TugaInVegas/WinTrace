@@ -31,7 +31,11 @@ namespace WinTrace
             foreach (var frame in frames)
             {
                 var method = frame.GetMethod();
-                if (method == null || IsSkipped(method, skip) || IsLambda(method)) continue;
+                if (method == null) continue;
+                // Past an async continuation boundary the frames belong to whatever completed the awaited task, not to
+                // the code that issued the step (e.g. the last awaited page method of the test).
+                if (parts.Count > 0 && IsContinuationBoundary(method)) break;
+                if (IsSkipped(method, skip) || IsLambda(method)) continue;
                 var file = frame.GetFileName();
                 var line = frame.GetFileLineNumber();
                 if (string.IsNullOrEmpty(file) || line <= 0) continue;
@@ -44,8 +48,59 @@ namespace WinTrace
                 }
                 if (parts.Count >= depth) break;
                 parts.Add((type, label));
+                if (IsTestEntry(method)) break;   // nothing past the test method is about this step
             }
             return parts.Count == 0 ? null : string.Join(" ← ", parts.Select(p => p.Label));
+        }
+
+        static readonly HashSet<string> ContinuationMethods = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "SetResult", "SetException", "TrySetResult", "TrySetException", "SetExistingTaskResult", "FinishContinuations",
+            "RunContinuations", "RunOrScheduleAction", "InvokeMoveNext", "ExecuteWithThreadLocal", "ExecuteEntryUnsafe"
+        };
+
+        static bool IsContinuationBoundary(MethodBase method)
+        {
+            var type = method.DeclaringType?.FullName ?? "";
+            if (!type.StartsWith("System.Threading.Tasks.", StringComparison.Ordinal)
+                && !type.StartsWith("System.Runtime.CompilerServices.", StringComparison.Ordinal)
+                && !type.StartsWith("System.Threading.ExecutionContext", StringComparison.Ordinal)) return false;
+            return ContinuationMethods.Contains(method.Name) || type.IndexOf("Continuation", StringComparison.Ordinal) >= 0;
+        }
+
+        static readonly HashSet<string> TestEntryAttributes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "TestMethodAttribute", "DataTestMethodAttribute", "TestInitializeAttribute", "TestCleanupAttribute",
+            "ClassInitializeAttribute", "ClassCleanupAttribute", "AssemblyInitializeAttribute", "AssemblyCleanupAttribute",
+            "TestAttribute", "TestCaseAttribute", "TestCaseSourceAttribute", "SetUpAttribute", "TearDownAttribute",
+            "OneTimeSetUpAttribute", "OneTimeTearDownAttribute", "FactAttribute", "TheoryAttribute"
+        };
+
+        // A test, setup or cleanup method (also when the frame is its async state machine), with any attribute derived from those.
+        static bool IsTestEntry(MethodBase method)
+        {
+            var candidates = new List<MethodBase> { method };
+            var sm = method.DeclaringType;
+            if (method.Name == "MoveNext" && sm != null && sm.Name.StartsWith("<", StringComparison.Ordinal) && sm.DeclaringType != null)
+            {
+                var end = sm.Name.IndexOf('>');
+                if (end > 1)
+                {
+                    var name = sm.Name.Substring(1, end - 1);
+                    candidates.AddRange(sm.DeclaringType.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                        .Where(m => m.Name == name));
+                }
+            }
+            foreach (var m in candidates)
+            {
+                object[] attrs;
+                try { attrs = m.GetCustomAttributes(true); }
+                catch (Exception ex) when (ex is TypeLoadException || ex is FileNotFoundException || ex is CustomAttributeFormatException) { continue; }
+                foreach (var a in attrs)
+                    for (var t = a.GetType(); t != null && t != typeof(Attribute); t = t.BaseType)
+                        if (TestEntryAttributes.Contains(t.Name)) return true;
+            }
+            return false;
         }
 
         // Lambda bodies compile to methods named like "<Outer>b__0_0" (in a closure class or the declaring type).

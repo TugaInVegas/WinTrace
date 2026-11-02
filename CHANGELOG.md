@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.1
+
+### Fixed
+- Call sites in async tests could end in an unrelated frame: after an `await` (without a synchronization context, as
+  in MSTest), the rest of the test runs inside the completion of the awaited method, whose frame then appeared as a
+  caller. Call sites now stop at async continuation boundaries and at the test, setup or cleanup method.
+- "No UI element resembles ..." in the `.md` and `inspect` now also names the case of an action that did not happen
+  (a menu or dropdown that did not open) and points to the screenshot at the failure.
+
 ## 0.7.0
 
 Fixes from the first live run of 0.6.0 in an MSTest + WinAppDriver + Playwright .NET suite.

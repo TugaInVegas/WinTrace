@@ -72,7 +72,8 @@ namespace WinTrace
                 else if (step.Kind == "error" && snapshot != null)
                     sb.AppendLine(locator == null
                         ? "No locator was recorded for this step, so no similar elements can be suggested."
-                        : $"No UI element resembles `{TraceAnalysis.LocatorValue(locator)}`: it may not exist yet (add a wait) or be in another window.").AppendLine();
+                        : $"No UI element resembles `{TraceAnalysis.LocatorValue(locator)}`: it may not exist yet (add a wait), be in another window, or the action that shows it did not happen (a menu or dropdown that did not open)."
+                          + (failureImageFile != null ? $" The screenshot at the failure (`{failureImageFile}`) shows what was on screen." : "")).AppendLine();
 
                 if (captured != step && captured != detailFrom)
                     sb.Append("Screenshot and UI tree were captured by the enclosing step #").Append(captured.Seq).Append(" (").Append(captured.Name).AppendLine(").").AppendLine();
